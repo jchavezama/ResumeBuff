@@ -71,7 +71,7 @@ export default function ScannerTool() {
       formData.append("job_description", jobDescription);
 
       // Call the FastAPI Python backend
-      const response = await fetch("https://resumebuff-api.onrender.com", {
+      const response = await fetch("https://resumebuff-api.onrender.com/api/scan", {
         method: "POST",
         body: formData,
       });
