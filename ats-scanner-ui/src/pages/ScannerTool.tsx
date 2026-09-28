@@ -35,8 +35,26 @@ export default function ScannerTool() {
   const isScanComplete = edits.length > 0 || baseScore > 0;
   const pendingEditsCount = edits.filter((e) => e.status === "pending").length;
 
-  // 1. Check Appwrite Session on Mount
+  // 1. Check Session and Local Storage on Mount
   useEffect(() => {
+    // A. Check for a saved scan so data survives the redirect from the Login page
+    const savedScan = localStorage.getItem("resumeBuffScanResults");
+    if (savedScan) {
+      try {
+        const data = JSON.parse(savedScan);
+        setBaseScore(data.base_score);
+        setCurrentScore(data.base_score);
+        const formattedEdits = data.proposed_edits.map((edit: any) => ({
+          ...edit,
+          status: "pending",
+        }));
+        setEdits(formattedEdits);
+      } catch (e) {
+        console.error("Failed to parse saved scan", e);
+      }
+    }
+
+    // B. Check Appwrite Session
     const checkSession = async () => {
       try {
         const currentAccount = await account.get();
@@ -70,29 +88,33 @@ export default function ScannerTool() {
       formData.append("resume", file);
       formData.append("job_description", jobDescription);
 
-      // Call the FastAPI Python backend
       const response = await fetch("https://resumebuff-api.onrender.com/api/scan", {
         method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
-        // Grab the exact error message from Python instead of the hardcoded string
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.detail || "Server error. Check Python terminal.");
       }
 
       const data = await response.json();
       
-      // Initialize gamification state
+      // Initialize state
       setBaseScore(data.base_score);
       setCurrentScore(data.base_score);
-      
       const formattedEdits = data.proposed_edits.map((edit: any) => ({
         ...edit,
         status: "pending",
       }));
       setEdits(formattedEdits);
+
+      // SAVE TO LOCAL STORAGE: This ensures unauthenticated users don't lose 
+      // their results when they navigate away to the login page.
+      localStorage.setItem("resumeBuffScanResults", JSON.stringify({
+        base_score: data.base_score,
+        proposed_edits: data.proposed_edits
+      }));
       
     } catch (err: any) {
       setError(err.message);
@@ -119,16 +141,17 @@ export default function ScannerTool() {
     return "text-destructive";
   };
 
-    const handleReset = () => {
-      setFile(null);
-      setBaseScore(0);
-      setCurrentScore(0);
-      setEdits([]);
-      setError("");
-    };
+  const handleReset = () => {
+    setFile(null);
+    setBaseScore(0);
+    setCurrentScore(0);
+    setEdits([]);
+    setError("");
+    // Clear the memory so a fresh scan starts empty
+    localStorage.removeItem("resumeBuffScanResults"); 
+  };
 
   const handleDownload = () => {
-    // Filter for only the edits the user explicitly approved
     const approvedEdits = edits.filter((e) => e.status === "approved");
 
     let fileContent = "RESUMEBUFF - OPTIMIZED BULLET POINTS\n";
@@ -145,7 +168,6 @@ export default function ScannerTool() {
       });
     }
 
-    // Create a Blob containing the text and trigger a native browser download
     const blob = new Blob([fileContent], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -157,29 +179,10 @@ export default function ScannerTool() {
     URL.revokeObjectURL(url);
   };
 
-  // Show a loading spinner while Appwrite checks the session
   if (authLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  // Appwrite Authentication Guard: If not logged in, prompt them to log in
-  if (!user) {
-    return (
-      <div className="max-w-2xl mx-auto py-24 px-4 text-center space-y-8">
-        <div className="mx-auto w-16 h-16 bg-primary/10 flex items-center justify-center rounded-full mb-6">
-          <Lock className="h-8 w-8 text-primary" />
-        </div>
-        <h1 className="text-4xl font-extrabold tracking-tight">Access Restricted</h1>
-        <p className="text-xl text-muted-foreground">
-          ResumeBuff's ATS scanner requires a free account to process PDF files and generate AI edits.
-        </p>
-        <Button size="lg" className="rounded-full text-lg h-14 px-8 mt-4" asChild>
-          <Link to="/login">Log In / Sign Up</Link>
-        </Button>
       </div>
     );
   }
@@ -189,7 +192,8 @@ export default function ScannerTool() {
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-extrabold tracking-tight">ATS Scanner</h1>
         <p className="text-muted-foreground text-lg">
-          Welcome back, {user.name.split(' ')[0]}. Upload your resume and approve AI edits to boost your score.
+          {/* Dynamic greeting based on auth status */}
+          Welcome {user ? `back, ${user.name.split(' ')[0]}` : "to ResumeBuff"}. Upload your resume and approve AI edits to boost your score.
         </p>
       </div>
 
@@ -242,6 +246,22 @@ export default function ScannerTool() {
               ) : (
                 "Scan Resume against Job Description"
               )}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : !user ? (
+        /* --- LOGIN GATE VIEW (Scan complete, but not logged in) --- */
+        <Card className="border-primary/20 shadow-md bg-card">
+          <CardContent className="p-16 text-center space-y-6">
+            <div className="mx-auto w-20 h-20 bg-primary/10 flex items-center justify-center rounded-full mb-4">
+              <Lock className="h-10 w-10 text-primary" />
+            </div>
+            <h2 className="text-3xl font-bold">Scan Complete!</h2>
+            <p className="text-xl text-muted-foreground max-w-lg mx-auto">
+              We've successfully analyzed your resume against the job description. Log in or create a free account to reveal your ATS match score and unlock your AI-suggested edits.
+            </p>
+            <Button size="lg" className="rounded-full text-lg h-14 px-8 mt-4" asChild>
+              <Link to="/login">Log In / Sign Up to View Results</Link>
             </Button>
           </CardContent>
         </Card>
@@ -353,7 +373,7 @@ export default function ScannerTool() {
               </Button>
               <button 
                 onClick={handleReset}
-                className="text-sm font-medium text-muted-foreground hover:text-primary underline-offset-4 hover:underline transition-colors"
+                className="ml-6 text-sm font-medium text-muted-foreground hover:text-primary underline-offset-4 hover:underline transition-colors"
               >
                 Scan another resume
               </button>
