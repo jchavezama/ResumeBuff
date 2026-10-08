@@ -241,7 +241,7 @@ export default function ScannerTool() {
     if (!element) return;
     const safeName = (resumeData?.contact.name || user?.name || "Resume").replace(/\s+/g, "_");
     const opt = {
-      margin: [0.4, 0, 0.4, 0],
+      margin: [0.4, 0, 0.4, 0] as [number, number, number, number],
       filename: `${safeName}_Resume.pdf`,
       image: { type: "jpeg", quality: 1 },
       html2canvas: { scale: 2, useCORS: true },
