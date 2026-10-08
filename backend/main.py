@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pypdf import PdfReader
@@ -7,12 +8,10 @@ from pydantic import BaseModel
 from groq import Groq
 from dotenv import load_dotenv
 
-load_dotenv() # Loads the variables from the .env file
+load_dotenv() 
 
-# 1. Initialize the FastAPI app
 app = FastAPI()
 
-# Allow your React app to communicate with this backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -21,18 +20,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. Define the exact JSON structure we want (Kept for reference, though Groq will build it from the prompt)
-class EditProposal(BaseModel):
+# 1. New Pydantic Models defining Bogdan's template layout
+class BulletPoint(BaseModel):
     id: str
     original_text: str
     proposed_text: str
     reason: str
 
-class ATSScanResult(BaseModel):
-    base_score: int
-    proposed_edits: list[EditProposal]
+class Skill(BaseModel):
+    category: str
+    description: str
 
-# 3. Create the API Endpoint
+class Experience(BaseModel):
+    company_name: str
+    job_title: str
+    company_description: str
+    dates: str
+    bullets: list[BulletPoint]
+
+class ResumeData(BaseModel):
+    target_title: str
+    summary: str
+    skills: list[Skill]
+    experience: list[Experience]
+    base_score: int
+
+# 2. Updated API Endpoint
 @app.post("/api/scan")
 async def scan_resume(
     resume: UploadFile = File(...),
@@ -42,47 +55,55 @@ async def scan_resume(
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
     try:
-        # A. Extract text from the PDF
         reader = PdfReader(resume.file)
         resume_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
 
-        # B. Initialize the Groq Client
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             raise HTTPException(status_code=500, detail="Groq API key not configured.")
         client = Groq(api_key=api_key)
 
-        # C. The System Prompt 
         prompt = f"""
-        You are a dual-persona expert. First, evaluate the candidate's RESUME against the JOB DESCRIPTION like a strict, enterprise Applicant Tracking System (ATS). 
-        Then, explain your suggested edits like a friendly, human career coach talking directly to the candidate.
+        You are an expert executive resume writer and ATS screening API. Your job is to extract the candidate's history and restructure it into a highly optimized, high-converting template format, while also generating a dynamic ATS match score (0-100).
 
-        1. Calculate a dynamic base match score from 0 to 100 based on keyword overlap, skill alignment, and formatting. 
-        - BE BRUTALLY HONEST. Do not sugarcoat the score. 
-        - If the resume lacks core requirements, uses weak passive verbs, or misses explicit keywords, penalize it heavily.
-        2. Suggest 3 to 5 highly specific edits to the candidate's bullet points to improve their ATS score.
-
-        RULES FOR THE REWRITTEN BULLET POINTS (proposed_text):
-        - Ban AI buzzwords: Do NOT use "spearheaded," "delved," "synergized," "testament," "unleashed," "navigated," or "orchestrated."
-        - Use plain English and strong active verbs (e.g., "Engineered," "Built," "Reduced," "Managed").
-        - Preserve the core truth of the candidate's original bullet point. Only rephrase and inject missing ATS keywords from the job description where relevant.
-
-        RULES FOR THE ADVICE (reason):
-        - Write exactly 1 or 2 short sentences.
-        - Speak directly to the user like a peer (use "I" and "you"). 
-        - Sound casual, conversational, and grounded. 
-
-        Return the response ONLY as a JSON object matching this exact schema:
+        INSTRUCTIONS:
+        1. target_title: Generate a strong target title based on the user's experience and the job description.
+        2. summary: Write a punchy 2-3 line executive summary.
+        3. skills: Extract 3 to 5 core skill categories. Provide the category name (e.g., "Content Strategy") and a 1-sentence description showing impact (e.g., "Developed content strategies across 5 B2B SaaS tech companies").
+        4. experience: Extract their work history. For each role, provide:
+           - company_name
+           - job_title
+           - company_description: A brief 1-line description of what the company does (e.g., "Leading B2B sales & design SaaS software for solar").
+           - dates: (e.g., "2020 - PRESENT")
+           - bullets: For each original bullet, provide a rewritten 'proposed_text' using strong active verbs, stripping AI buzzwords (like 'spearheaded' or 'delved'), and injecting ATS keywords. Include a short conversational 'reason' for the change.
+        
+        Return the response ONLY as a JSON object matching this exact schema. Generate a random UUID string for every bullet point's 'id'.
         {{
-          "base_score": 65,
-          "proposed_edits": [
+          "target_title": "string",
+          "summary": "string",
+          "skills": [
             {{
-              "id": "uuid-string-here",
-              "original_text": "Exact text from the resume",
-              "proposed_text": "The rewritten, ATS-optimized bullet point",
-              "reason": "Brief, conversational explanation of why this helps"
+              "category": "string",
+              "description": "string"
             }}
-          ]
+          ],
+          "experience": [
+            {{
+              "company_name": "string",
+              "job_title": "string",
+              "company_description": "string",
+              "dates": "string",
+              "bullets": [
+                {{
+                  "id": "uuid-string-here",
+                  "original_text": "Exact text from the resume",
+                  "proposed_text": "The rewritten, ATS-optimized bullet point",
+                  "reason": "Brief, conversational explanation of why this helps"
+                }}
+              ]
+            }}
+          ],
+          "base_score": 75
         }}
 
         RESUME:
@@ -92,7 +113,6 @@ async def scan_resume(
         {job_description}
         """
 
-        # D. Call Groq using JSON mode
         chat_completion = client.chat.completions.create(
             messages=[
                 {
@@ -109,10 +129,8 @@ async def scan_resume(
             response_format={"type": "json_object"},
         )
 
-        # 1. Extract and parse the JSON string
         raw_text = chat_completion.choices[0].message.content.strip()
         
-        # Failsafe cleaner just in case the model wraps it in markdown blocks
         if raw_text.startswith("```"):
             raw_text = raw_text.strip("`").removeprefix("json").strip()
             
