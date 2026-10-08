@@ -243,9 +243,9 @@ export default function ScannerTool() {
     const opt = {
       margin: [0.4, 0, 0.4, 0] as [number, number, number, number],
       filename: `${safeName}_Resume.pdf`,
-      image: { type: "jpeg", quality: 1 },
+      image: { type: "jpeg" as const, quality: 1 },
       html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
+      jsPDF: { unit: "in" as const, format: "letter" as const, orientation: "portrait" as const },
     };
     html2pdf().set(opt).from(element).save();
   };
