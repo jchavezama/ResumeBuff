@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { account } from "../appwrite";
 import { Button } from "@/components/ui/button";
@@ -165,6 +165,23 @@ export default function ScannerTool() {
     }
   }, [resumeData]);
 
+  // The resume preview is always a true US Letter page (816x1056 CSS px) and is
+  // scaled down to fit narrow screens, so phones see the whole page instead of a
+  // squished or clipped layout.
+  const previewWrapRef = useRef<HTMLDivElement>(null);
+  const [previewScale, setPreviewScale] = useState(1);
+  const showPreview = resumeData !== null && !!user;
+
+  useEffect(() => {
+    const el = previewWrapRef.current;
+    if (!el) return;
+    const update = () => setPreviewScale(Math.min(1, el.clientWidth / 816));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showPreview]);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
@@ -271,18 +288,24 @@ export default function ScannerTool() {
             width: 8.5in !important;
             height: 11in !important;
             max-width: none !important;
-            aspect-ratio: auto !important;
             margin: 0 !important;
             border: none !important;
             box-shadow: none !important;
+            transform: none !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
+          }
+          /* Approved edits are highlighted on screen only, never in the PDF */
+          #resume-preview .approved-highlight {
+            background: transparent !important;
+            font-weight: 400 !important;
+            padding: 0 !important;
           }
         }
       `}</style>
       <div className="text-center space-y-4">
-        <h1 className="text-4xl font-extrabold tracking-tight">AI Resume Builder</h1>
-        <p className="text-muted-foreground text-lg">
+        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">AI Resume Builder</h1>
+        <p className="text-muted-foreground text-base sm:text-lg">
           {user ? `Welcome back, ${user.name.split(" ")[0]}` : "Welcome to ResumeBuff"}. Rebuild your resume into a
           high-converting ATS template.
         </p>
@@ -290,7 +313,7 @@ export default function ScannerTool() {
 
       {!isScanComplete ? (
         <Card className="border-primary/20 shadow-md bg-card max-w-4xl mx-auto">
-          <CardContent className="p-8 space-y-8">
+          <CardContent className="p-4 sm:p-8 space-y-6 sm:space-y-8">
             {error && <div className="p-4 bg-destructive/10 text-destructive rounded-md font-medium">{error}</div>}
 
             <div className="grid md:grid-cols-2 gap-8">
@@ -298,7 +321,7 @@ export default function ScannerTool() {
                 <label className="font-semibold text-lg flex items-center gap-2">
                   <FileText className="h-5 w-5 text-primary" /> 1. Upload Resume (PDF)
                 </label>
-                <div className="border-2 border-dashed border-primary/30 rounded-xl p-8 flex flex-col items-center justify-center bg-muted/50 hover:bg-muted transition-colors cursor-pointer relative">
+                <div className="border-2 border-dashed border-primary/30 rounded-xl h-48 p-4 flex flex-col items-center justify-center bg-muted/50 hover:bg-muted transition-colors cursor-pointer relative">
                   <input
                     type="file"
                     accept=".pdf"
@@ -306,7 +329,7 @@ export default function ScannerTool() {
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <UploadCloud className="h-10 w-10 text-primary mb-2" />
-                  <span className="font-medium text-center">{file ? file.name : "Drag & drop or click to browse"}</span>
+                  <span className="font-medium text-center break-all line-clamp-2">{file ? file.name : "Drag & drop or click to browse"}</span>
                 </div>
               </div>
 
@@ -315,7 +338,7 @@ export default function ScannerTool() {
                   <FileText className="h-5 w-5 text-primary" /> 2. Paste Job Description
                 </label>
                 <Textarea
-                  className="min-h-[160px] resize-none bg-muted/50 border-primary/30 focus-visible:ring-primary"
+                  className="h-48 min-h-0 resize-none overflow-y-auto [field-sizing:fixed] bg-muted/50 border-primary/30 focus-visible:ring-primary"
                   onChange={(e) => setJobDescription(e.target.value)}
                   placeholder="Paste the raw text of the job posting here..."
                   value={jobDescription}
@@ -324,7 +347,7 @@ export default function ScannerTool() {
             </div>
 
             <Button
-              className="w-full text-lg h-14 rounded-full shadow-lg"
+              className="w-full text-base sm:text-lg h-auto min-h-14 py-3 rounded-full shadow-lg whitespace-normal"
               disabled={loading || !file || !jobDescription}
               onClick={handleScan}
               size="lg"
@@ -341,12 +364,12 @@ export default function ScannerTool() {
         </Card>
       ) : !user ? (
         <Card className="border-primary/20 shadow-md bg-card max-w-2xl mx-auto">
-          <CardContent className="p-16 text-center space-y-6">
+          <CardContent className="p-6 sm:p-16 text-center space-y-6">
             <div className="mx-auto w-20 h-20 bg-primary/10 flex items-center justify-center rounded-full mb-4">
               <Lock className="h-10 w-10 text-primary" />
             </div>
             <h2 className="text-3xl font-bold">Template Built Successfully!</h2>
-            <p className="text-xl text-muted-foreground max-w-lg mx-auto">
+            <p className="text-base sm:text-xl text-muted-foreground max-w-lg mx-auto">
               We've successfully restructured your experience. Log in or create a free account to review your edits and
               export your high-converting PDF.
             </p>
@@ -383,7 +406,7 @@ export default function ScannerTool() {
               </CardContent>
             </Card>
 
-            <div className="space-y-8 max-h-[750px] overflow-y-auto pr-2 pb-10">
+            <div className="space-y-8 max-h-[60vh] xl:max-h-[750px] overflow-y-auto pr-2 pb-10">
               {resumeData!.experience.map((exp, expIdx) => (
                 <div key={expIdx} className="space-y-4">
                   {exp.bullets.length > 0 && (
@@ -502,10 +525,20 @@ export default function ScannerTool() {
           </div>
 
           {/* RIGHT PANEL: Live PDF Preview */}
-          <div className="xl:col-span-7 sticky top-8 flex justify-center">
+          <div ref={previewWrapRef} className="xl:col-span-7 xl:sticky xl:top-8 min-w-0 overflow-hidden">
             <div
               id="resume-preview"
-              className="bg-white text-black p-10 shadow-2xl border border-gray-200 w-full max-w-[850px] aspect-[8.5/11] overflow-hidden font-sans text-left flex flex-col"
+              className="bg-white text-black p-10 shadow-2xl border border-gray-200 overflow-hidden text-left flex flex-col mx-auto"
+              style={{
+                width: 816,
+                height: 1056,
+                // Static system font (not the variable Inter font): Firefox drops bold/medium
+                // variable-font text from the PDF text layer, which would hide it from ATS.
+                fontFamily: "Arial, Helvetica, sans-serif",
+                transform: `scale(${previewScale})`,
+                transformOrigin: "top left",
+                marginBottom: -1056 * (1 - previewScale),
+              }}
             >
               {/* HEADER: Name & Contact Extracted directly from Resume */}
               <div className="border-b-2 border-emerald-600 pb-4 mb-4 text-center">
@@ -564,7 +597,7 @@ export default function ScannerTool() {
                         {exp.bullets.map((b) => (
                           <li key={b.id} className="text-[13px] text-gray-800 leading-snug pl-1">
                             {b.status === "approved" ? (
-                              <span className="bg-emerald-100/70 font-medium transition-colors px-0.5">
+                              <span className="approved-highlight bg-emerald-100/70 font-medium transition-colors px-0.5">
                                 {b.proposed_text}
                               </span>
                             ) : (
