@@ -235,7 +235,9 @@ HARD RULES (anti-hallucination):
 
 OUTPUT FIELDS:
 - target_title: a short, honest professional title (2-5 words) that fits the candidate's real experience and is close to the job's title. No technologies the candidate does not have.
-- summary: 2-3 sentences, factual, built only from the verified facts.
+- summary: 2-3 sentences written in the candidate's OWN voice, as if they are describing themselves at the top of their resume. Use the implied first person typical of resumes: never use the candidate's name, never use "he", "she", "they" or "his/her/their", and avoid starting with "I". Start with who they are or what they do (e.g. "Computer science graduate who enjoys ..."), then what they build and how they work. Sound natural and confident, like a person talking, not a report about them. No buzzword stacking, no filler like "proven track record" or "results-driven". Built only from the verified facts, with no invented claims.
+  Example of the right voice: "Software engineer who loves turning tricky concurrency and graph problems into clean, reliable code. I've built multithreaded C# systems and Python route optimizers, and I like working in Agile teams where I can ship with React."
+  The example shows the tone only; use only the real facts and keep it to 2-3 sentences. Occasional first-person ("I've built", "I like") is fine.
 - base_score: integer 0-100 estimating how well the ORIGINAL resume matches the job description (skills overlap, relevant experience). Be realistic; avoid round placeholders.
 - experience: for EACH experience entry, in the SAME ORDER and with the SAME NUMBER of bullets as the input:
     * company_description: one short line (max 15 words) saying what the project/company is, derived only from its bullets.

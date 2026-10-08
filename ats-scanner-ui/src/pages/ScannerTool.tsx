@@ -6,8 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { UploadCloud, Check, X, Loader2, FileText, ArrowRight, Lock, Download } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-// @ts-ignore
-import html2pdf from "html2pdf.js";
 
 interface Contact {
   name: string;
@@ -237,17 +235,17 @@ export default function ScannerTool() {
   };
 
   const handleDownloadPDF = () => {
-    const element = document.getElementById("resume-preview");
-    if (!element) return;
+    // The browser's print dialog saves a real text-based PDF (selectable text,
+    // which is what ATS software needs). The page title becomes the default filename.
     const safeName = (resumeData?.contact.name || user?.name || "Resume").replace(/\s+/g, "_");
-    const opt = {
-      margin: [0.4, 0, 0.4, 0] as [number, number, number, number],
-      filename: `${safeName}_Resume.pdf`,
-      image: { type: "jpeg" as const, quality: 1 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: "in" as const, format: "letter" as const, orientation: "portrait" as const },
+    const prevTitle = document.title;
+    document.title = `${safeName}_Resume`;
+    const restore = () => {
+      document.title = prevTitle;
+      window.removeEventListener("afterprint", restore);
     };
-    html2pdf().set(opt).from(element).save();
+    window.addEventListener("afterprint", restore);
+    window.print();
   };
 
   if (authLoading) {
@@ -260,6 +258,28 @@ export default function ScannerTool() {
 
   return (
     <div className="max-w-7xl mx-auto py-12 px-4 space-y-8">
+      <style>{`
+        @media print {
+          @page { size: letter; margin: 0; }
+          html, body { margin: 0 !important; height: 100% !important; overflow: hidden !important; }
+          body * { visibility: hidden !important; }
+          #resume-preview, #resume-preview * { visibility: visible !important; }
+          #resume-preview {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 8.5in !important;
+            height: 11in !important;
+            max-width: none !important;
+            aspect-ratio: auto !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+        }
+      `}</style>
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-extrabold tracking-tight">AI Resume Builder</h1>
         <p className="text-muted-foreground text-lg">
