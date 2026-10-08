@@ -9,17 +9,29 @@ import { motion, AnimatePresence } from "framer-motion";
 // @ts-ignore
 import html2pdf from "html2pdf.js";
 
+interface Contact {
+  name: string;
+  email: string;
+  location: string;
+  links: string;
+}
+
+interface Education {
+  institution: string;
+  degree: string;
+}
+
+interface Skill {
+  category: string;
+  items: string[];
+}
+
 interface BulletPoint {
   id: string;
   original_text: string;
   proposed_text: string;
   reason: string;
   status: "pending" | "approved" | "rejected";
-}
-
-interface Skill {
-  category: string;
-  description: string;
 }
 
 interface Experience {
@@ -31,6 +43,8 @@ interface Experience {
 }
 
 interface ResumeData {
+  contact: Contact;
+  education: Education[];
   target_title: string;
   summary: string;
   skills: Skill[];
@@ -38,37 +52,95 @@ interface ResumeData {
   base_score: number;
 }
 
+const STORAGE_KEY = "resumeBuffScanState";
+
+// Converts ANY incoming data (API response or old localStorage) into the exact
+// shape the UI needs, so a missing/odd field can never crash the render.
+const normalizeResume = (data: any, resetStatus = false): ResumeData => ({
+  contact: {
+    name: data?.contact?.name ?? "",
+    email: data?.contact?.email ?? "",
+    location: data?.contact?.location ?? "",
+    links: data?.contact?.links ?? "",
+  },
+  education: Array.isArray(data?.education)
+    ? data.education.map((e: any) => ({
+        institution: e?.institution ?? "",
+        degree: e?.degree ?? "",
+      }))
+    : [],
+  target_title: data?.target_title ?? "",
+  summary: data?.summary ?? "",
+  base_score: Number(data?.base_score) || 0,
+  skills: Array.isArray(data?.skills)
+    ? data.skills.map((s: any) => {
+        const raw = typeof s === "string" ? s : s?.items ?? s?.skills ?? s?.list ?? [];
+        const items: string[] = Array.isArray(raw)
+          ? raw.map((x: any) => String(x))
+          : typeof raw === "string"
+          ? raw.split(",").map((x: string) => x.trim()).filter(Boolean)
+          : [];
+        return { category: s?.category ?? s?.name ?? "Skills", items };
+      }).filter((s: Skill) => s.items.length > 0)
+    : [],
+  experience: Array.isArray(data?.experience)
+    ? data.experience.map((exp: any, expIdx: number) => ({
+        company_name: exp?.company_name ?? "",
+        job_title: exp?.job_title ?? "",
+        company_description: exp?.company_description ?? "",
+        dates: exp?.dates ?? "",
+        bullets: Array.isArray(exp?.bullets)
+          ? exp.bullets.map((b: any, i: number) => ({
+              id: b?.id ? String(b.id) : `exp${expIdx}-b${i}`,
+              original_text: b?.original_text ?? "",
+              proposed_text: b?.proposed_text ?? "",
+              reason: b?.reason ?? "",
+              status: resetStatus
+                ? "pending"
+                : b?.status === "approved" || b?.status === "rejected"
+                ? b.status
+                : "pending",
+            }))
+          : [],
+      }))
+    : [],
+});
+
 export default function ScannerTool() {
-  // Appwrite Auth State
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-
-  // Scanner State
   const [file, setFile] = useState<File | null>(null);
   const [jobDescription, setJobDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  // Builder State
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
-  const [currentScore, setCurrentScore] = useState(0);
 
-  // Gamification Math
   const totalBullets = resumeData?.experience.reduce((acc, exp) => acc + exp.bullets.length, 0) || 0;
-  const pointsPerEdit = totalBullets > 0 ? Math.floor((100 - (resumeData?.base_score || 0)) / totalBullets) : 0;
-  const pendingEditsCount = resumeData?.experience.reduce((acc, exp) => acc + exp.bullets.filter((b) => b.status === "pending").length, 0) || 0;
+  const approvedCount =
+    resumeData?.experience.reduce((acc, exp) => acc + exp.bullets.filter((b) => b.status === "approved").length, 0) || 0;
+  const pendingEditsCount =
+    resumeData?.experience.reduce((acc, exp) => acc + exp.bullets.filter((b) => b.status === "pending").length, 0) || 0;
+  const baseScore = resumeData?.base_score || 0;
+
+  // Score is derived from approvals, so it can never drift from the saved data,
+  // and approving every edit lands exactly on 100.
+  const pointsPerEdit = totalBullets > 0 ? (100 - baseScore) / totalBullets : 0;
+  const currentScore = Math.min(100, Math.round(baseScore + approvedCount * pointsPerEdit));
   const isScanComplete = resumeData !== null;
 
-  // 1. Check Session and Local Storage on Mount
   useEffect(() => {
-    const savedState = localStorage.getItem("resumeBuffScanState");
+    const savedState = localStorage.getItem(STORAGE_KEY);
     if (savedState) {
       try {
-        const { resumeData: savedData, currentScore: savedScore } = JSON.parse(savedState);
-        setResumeData(savedData);
-        setCurrentScore(savedScore);
+        const { resumeData: savedData } = JSON.parse(savedState);
+        if (savedData) {
+          setResumeData(normalizeResume(savedData));
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+        }
       } catch (e) {
         console.error("Failed to parse saved scan", e);
+        localStorage.removeItem(STORAGE_KEY);
       }
     }
 
@@ -85,12 +157,15 @@ export default function ScannerTool() {
     checkSession();
   }, []);
 
-  // 2. Auto-save builder progress so they never lose edits if they refresh
   useEffect(() => {
     if (resumeData) {
-      localStorage.setItem("resumeBuffScanState", JSON.stringify({ resumeData, currentScore }));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ resumeData }));
+      } catch (e) {
+        console.error("Failed to save scan", e);
+      }
     }
-  }, [resumeData, currentScore]);
+  }, [resumeData]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -119,23 +194,15 @@ export default function ScannerTool() {
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || "Server error. Check Python terminal.");
+        const detail =
+          typeof errData.detail === "string" ? errData.detail : errData.detail ? JSON.stringify(errData.detail) : "";
+        throw new Error(detail || "Server error. Please try again.");
       }
 
       const data = await response.json();
-      
-      // Inject "pending" review status into every nested bullet point
-      const formattedData: ResumeData = {
-        ...data,
-        experience: data.experience.map((exp: any) => ({
-          ...exp,
-          bullets: exp.bullets.map((b: any) => ({ ...b, status: "pending" }))
-        }))
-      };
+      console.log("API response:", data);
 
-      setResumeData(formattedData);
-      setCurrentScore(data.base_score);
-      
+      setResumeData(normalizeResume(data, true));
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -143,7 +210,6 @@ export default function ScannerTool() {
     }
   };
 
-  // Deep state update to toggle bullet points inside specific companies
   const handleReview = (expIndex: number, bulletId: string, decision: "approved" | "rejected") => {
     setResumeData((prev) => {
       if (!prev) return prev;
@@ -155,10 +221,6 @@ export default function ScannerTool() {
       );
       return newData;
     });
-
-    if (decision === "approved") {
-      setCurrentScore((prev) => Math.min(prev + pointsPerEdit, 100));
-    }
   };
 
   const getScoreColor = (score: number) => {
@@ -170,16 +232,17 @@ export default function ScannerTool() {
   const handleReset = () => {
     setFile(null);
     setResumeData(null);
-    setCurrentScore(0);
     setError("");
-    localStorage.removeItem("resumeBuffScanState"); 
+    localStorage.removeItem(STORAGE_KEY);
   };
 
   const handleDownloadPDF = () => {
     const element = document.getElementById("resume-preview");
+    if (!element) return;
+    const safeName = (resumeData?.contact.name || user?.name || "Resume").replace(/\s+/g, "_");
     const opt = {
-      margin: [0.4, 0, 0.4, 0], // Top, Right, Bottom, Left margins
-      filename: "ResumeBuff_Optimized_Resume.pdf",
+      margin: [0.4, 0, 0.4, 0],
+      filename: `${safeName}_Resume.pdf`,
       image: { type: "jpeg", quality: 1 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
@@ -200,16 +263,16 @@ export default function ScannerTool() {
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-extrabold tracking-tight">AI Resume Builder</h1>
         <p className="text-muted-foreground text-lg">
-          {user ? `Welcome back, ${user.name.split(' ')[0]}` : "Welcome to ResumeBuff"}. Rebuild your resume into a high-converting ATS template.
+          {user ? `Welcome back, ${user.name.split(" ")[0]}` : "Welcome to ResumeBuff"}. Rebuild your resume into a
+          high-converting ATS template.
         </p>
       </div>
 
       {!isScanComplete ? (
-        /* --- UPLOAD VIEW --- */
         <Card className="border-primary/20 shadow-md bg-card max-w-4xl mx-auto">
           <CardContent className="p-8 space-y-8">
             {error && <div className="p-4 bg-destructive/10 text-destructive rounded-md font-medium">{error}</div>}
-            
+
             <div className="grid md:grid-cols-2 gap-8">
               <div className="space-y-4">
                 <label className="font-semibold text-lg flex items-center gap-2">
@@ -232,19 +295,19 @@ export default function ScannerTool() {
                   <FileText className="h-5 w-5 text-primary" /> 2. Paste Job Description
                 </label>
                 <Textarea
-                  placeholder="Paste the raw text of the job posting here..."
                   className="min-h-[160px] resize-none bg-muted/50 border-primary/30 focus-visible:ring-primary"
-                  value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
+                  placeholder="Paste the raw text of the job posting here..."
+                  value={jobDescription}
                 />
               </div>
             </div>
 
             <Button
-              size="lg"
               className="w-full text-lg h-14 rounded-full shadow-lg"
-              onClick={handleScan}
               disabled={loading || !file || !jobDescription}
+              onClick={handleScan}
+              size="lg"
             >
               {loading ? (
                 <>
@@ -257,7 +320,6 @@ export default function ScannerTool() {
           </CardContent>
         </Card>
       ) : !user ? (
-        /* --- LOGIN GATE VIEW --- */
         <Card className="border-primary/20 shadow-md bg-card max-w-2xl mx-auto">
           <CardContent className="p-16 text-center space-y-6">
             <div className="mx-auto w-20 h-20 bg-primary/10 flex items-center justify-center rounded-full mb-4">
@@ -265,17 +327,16 @@ export default function ScannerTool() {
             </div>
             <h2 className="text-3xl font-bold">Template Built Successfully!</h2>
             <p className="text-xl text-muted-foreground max-w-lg mx-auto">
-              We've successfully restructured your experience. Log in or create a free account to review your edits and export your high-converting PDF.
+              We've successfully restructured your experience. Log in or create a free account to review your edits and
+              export your high-converting PDF.
             </p>
-            <Button size="lg" className="rounded-full text-lg h-14 px-8 mt-4" asChild>
+            <Button asChild className="rounded-full text-lg h-14 px-8 mt-4" size="lg">
               <Link to="/login">Log In / Sign Up to View Results</Link>
             </Button>
           </CardContent>
         </Card>
       ) : (
-        /* --- DUAL PANEL BUILDER VIEW --- */
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-          
           {/* LEFT PANEL: Review Engine */}
           <div className="xl:col-span-5 space-y-6">
             <Card className="border-primary/20 shadow-md">
@@ -303,13 +364,13 @@ export default function ScannerTool() {
             </Card>
 
             <div className="space-y-8 max-h-[750px] overflow-y-auto pr-2 pb-10">
-              <AnimatePresence>
-                {resumeData.experience.map((exp, expIdx) => (
-                  <div key={expIdx} className="space-y-4">
-                    {exp.bullets.length > 0 && (
-                      <h3 className="font-bold text-lg text-primary border-b pb-2">{exp.company_name} Updates</h3>
-                    )}
-                    
+              {resumeData!.experience.map((exp, expIdx) => (
+                <div key={expIdx} className="space-y-4">
+                  {exp.bullets.length > 0 && (
+                    <h3 className="font-bold text-lg text-primary border-b pb-2">{exp.company_name} Updates</h3>
+                  )}
+
+                  <AnimatePresence>
                     {exp.bullets.map((edit) => (
                       <motion.div
                         key={edit.id}
@@ -317,46 +378,53 @@ export default function ScannerTool() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, height: 0 }}
                       >
-                        <Card className={`border-l-4 shadow-sm transition-colors ${
-                          edit.status === "approved" ? "border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20" : 
-                          edit.status === "rejected" ? "border-l-destructive bg-destructive/5 dark:bg-destructive/10" : 
-                          "border-l-primary"
-                        }`}>
+                        <Card
+                          className={`border-l-4 shadow-sm transition-colors ${
+                            edit.status === "approved"
+                              ? "border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
+                              : edit.status === "rejected"
+                              ? "border-l-destructive bg-destructive/5 dark:bg-destructive/10"
+                              : "border-l-primary"
+                          }`}
+                        >
                           <CardHeader className="pb-3">
                             <div className="flex justify-between items-start">
                               <CardTitle className="text-xs font-bold uppercase tracking-wider text-primary">
                                 Bullet Rewrite
                               </CardTitle>
                               <span className="text-xs font-semibold bg-muted px-2 py-1 rounded-md text-muted-foreground">
-                                +{pointsPerEdit} Pts
+                                +{Math.round(pointsPerEdit)} Pts
                               </span>
                             </div>
-                            <p className="text-sm italic text-muted-foreground mt-2 border-l-2 pl-3">"{edit.original_text}"</p>
+                            <p className="text-sm italic text-muted-foreground mt-2 border-l-2 pl-3">
+                              "{edit.original_text}"
+                            </p>
                           </CardHeader>
-                          
+
                           <CardContent className="space-y-4">
                             <div className="flex items-start gap-3 bg-background p-3 rounded-md border border-primary/10">
                               <ArrowRight className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
                               <p className="text-sm font-medium text-foreground leading-snug">{edit.proposed_text}</p>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              <strong className="text-foreground">Why: </strong>{edit.reason}
+                              <strong className="text-foreground">Why: </strong>
+                              {edit.reason}
                             </p>
-                            
+
                             {edit.status === "pending" && (
                               <div className="flex justify-end gap-2 pt-2">
-                                <Button 
-                                  size="sm"
-                                  variant="outline" 
+                                <Button
                                   className="border-destructive text-destructive hover:bg-destructive hover:text-white h-8"
                                   onClick={() => handleReview(expIdx, edit.id, "rejected")}
+                                  size="sm"
+                                  variant="outline"
                                 >
                                   <X className="mr-1 h-3 w-3" /> Reject
                                 </Button>
-                                <Button 
-                                  size="sm"
+                                <Button
                                   className="bg-emerald-600 hover:bg-emerald-700 text-white h-8"
                                   onClick={() => handleReview(expIdx, edit.id, "approved")}
+                                  size="sm"
                                 >
                                   <Check className="mr-1 h-3 w-3" /> Approve
                                 </Button>
@@ -365,10 +433,20 @@ export default function ScannerTool() {
 
                             {edit.status !== "pending" && (
                               <div className="flex justify-end pt-1">
-                                <span className={`text-xs font-bold flex items-center gap-1 ${
-                                  edit.status === "approved" ? "text-emerald-600" : "text-destructive"
-                                }`}>
-                                  {edit.status === "approved" ? <><Check className="h-3 w-3" /> Approved</> : <><X className="h-3 w-3" /> Rejected</>}
+                                <span
+                                  className={`text-xs font-bold flex items-center gap-1 ${
+                                    edit.status === "approved" ? "text-emerald-600" : "text-destructive"
+                                  }`}
+                                >
+                                  {edit.status === "approved" ? (
+                                    <>
+                                      <Check className="h-3 w-3" /> Approved
+                                    </>
+                                  ) : (
+                                    <>
+                                      <X className="h-3 w-3" /> Rejected
+                                    </>
+                                  )}
                                 </span>
                               </div>
                             )}
@@ -376,25 +454,25 @@ export default function ScannerTool() {
                         </Card>
                       </motion.div>
                     ))}
-                  </div>
-                ))}
-              </AnimatePresence>
+                  </AnimatePresence>
+                </div>
+              ))}
             </div>
 
             {pendingEditsCount === 0 && (
               <div className="flex justify-center pt-2">
-                <Button 
-                  size="lg" 
-                  onClick={handleDownloadPDF}
+                <Button
                   className="w-full text-lg shadow-xl hover:scale-[1.02] transition-transform bg-primary"
+                  onClick={handleDownloadPDF}
+                  size="lg"
                 >
                   <Download className="mr-2 h-5 w-5" /> Export PDF
                 </Button>
               </div>
             )}
-            
+
             <div className="flex justify-center pb-4">
-              <button 
+              <button
                 onClick={handleReset}
                 className="text-sm font-medium text-muted-foreground hover:text-primary underline-offset-4 hover:underline transition-colors"
               >
@@ -405,54 +483,72 @@ export default function ScannerTool() {
 
           {/* RIGHT PANEL: Live PDF Preview */}
           <div className="xl:col-span-7 sticky top-8 flex justify-center">
-            {/* The Aspect Ratio container mimics an 8.5 x 11 piece of paper */}
-            <div 
-              id="resume-preview" 
-              className="bg-white text-black p-10 shadow-2xl border border-gray-200 w-full max-w-[850px] aspect-[8.5/11] overflow-hidden font-sans text-left"
+            <div
+              id="resume-preview"
+              className="bg-white text-black p-10 shadow-2xl border border-gray-200 w-full max-w-[850px] aspect-[8.5/11] overflow-hidden font-sans text-left flex flex-col"
             >
-              {/* Header: Name, Target Title & Summary */}
-              <div className="border-b-2 border-emerald-600 pb-5 mb-5">
-                <h1 className="text-4xl font-serif font-bold text-gray-900 tracking-tight">{user?.name || "Your Name"}</h1>
-                <h2 className="text-lg font-bold text-emerald-600 mt-2 uppercase tracking-widest">{resumeData.target_title}</h2>
-                <p className="text-[14px] text-gray-700 mt-3 leading-relaxed">{resumeData.summary}</p>
+              {/* HEADER: Name & Contact Extracted directly from Resume */}
+              <div className="border-b-2 border-emerald-600 pb-4 mb-4 text-center">
+                <h1 className="text-4xl font-serif font-bold text-gray-900 tracking-tight">
+                  {resumeData!.contact.name || user?.name || "Your Name"}
+                </h1>
+                <p className="text-sm text-gray-600 mt-2">
+                  {[resumeData!.contact.location, resumeData!.contact.email, resumeData!.contact.links]
+                    .filter(Boolean)
+                    .join(" | ")}
+                </p>
+                <h2 className="text-lg font-bold text-emerald-600 mt-3 uppercase tracking-widest">
+                  {resumeData!.target_title}
+                </h2>
+                <p className="text-[14px] text-gray-700 mt-2 leading-relaxed text-left">{resumeData!.summary}</p>
               </div>
 
-              {/* Skills Section */}
-              <div className="mb-6">
-                <h3 className="text-sm font-bold text-emerald-600 tracking-widest mb-3 uppercase">Skills</h3>
-                <div className="space-y-1.5">
-                  {resumeData.skills.map((skill, idx) => (
-                    <p key={idx} className="text-[13px] text-gray-800 leading-snug">
-                      <strong className="text-gray-900">{skill.category}</strong> - {skill.description}
-                    </p>
-                  ))}
+              {/* SKILLS SECTION */}
+              {resumeData!.skills.length > 0 && (
+                <div className="mb-5">
+                  <h3 className="text-sm font-bold text-emerald-600 tracking-widest mb-2 uppercase border-b pb-1">
+                    Technical Skills
+                  </h3>
+                  <div className="space-y-1">
+                    {resumeData!.skills.map((skill, idx) => (
+                      <p key={idx} className="text-[13px] text-gray-800 leading-snug">
+                        <strong className="text-gray-900">{skill.category}:</strong> {skill.items.join(", ")}
+                      </p>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Experience Section */}
-              <div>
-                <h3 className="text-sm font-bold text-emerald-600 tracking-widest mb-4 uppercase">Experience</h3>
-                <div className="space-y-6">
-                  {resumeData.experience.map((exp, idx) => (
+              {/* EXPERIENCE SECTION */}
+              <div className="flex-grow">
+                <h3 className="text-sm font-bold text-emerald-600 tracking-widest mb-3 uppercase border-b pb-1">
+                  Experience
+                </h3>
+                <div className="space-y-5">
+                  {resumeData!.experience.map((exp, idx) => (
                     <div key={idx}>
                       <div className="flex justify-between items-baseline mb-0.5">
                         <h4 className="font-bold text-gray-900 text-[15px]">
-                          {exp.company_name} <span className="font-normal mx-1">-</span> <span className="font-medium italic text-gray-700">{exp.job_title}</span>
+                          {exp.company_name} <span className="font-normal mx-1">-</span>{" "}
+                          <span className="font-medium italic text-gray-700">{exp.job_title}</span>
                         </h4>
+                        {exp.dates && (
+                          <span className="text-[12px] text-gray-500 uppercase tracking-wider">{exp.dates}</span>
+                        )}
                       </div>
-                      <p className="text-[12px] text-gray-400 mb-2 uppercase tracking-wider">{exp.dates}</p>
                       {exp.company_description && (
                         <p className="text-[13px] italic text-gray-500 mb-2">{exp.company_description}</p>
                       )}
-                      
+
                       <ul className="list-disc list-outside ml-5 space-y-1.5 mt-2">
                         {exp.bullets.map((b) => (
                           <li key={b.id} className="text-[13px] text-gray-800 leading-snug pl-1">
-                            {b.status === 'approved' ? (
-                               /* Subtle green highlight for approved changes */
-                               <span className="bg-emerald-100/70 font-medium transition-colors px-0.5">{b.proposed_text}</span> 
+                            {b.status === "approved" ? (
+                              <span className="bg-emerald-100/70 font-medium transition-colors px-0.5">
+                                {b.proposed_text}
+                              </span>
                             ) : (
-                               b.original_text
+                              b.original_text
                             )}
                           </li>
                         ))}
@@ -461,9 +557,25 @@ export default function ScannerTool() {
                   ))}
                 </div>
               </div>
+
+              {/* EDUCATION SECTION */}
+              {resumeData!.education.length > 0 && (
+                <div className="mt-5 pt-4">
+                  <h3 className="text-sm font-bold text-emerald-600 tracking-widest mb-2 uppercase border-b pb-1">
+                    Education
+                  </h3>
+                  <div className="space-y-2">
+                    {resumeData!.education.map((edu, idx) => (
+                      <div key={idx} className="flex justify-between items-baseline">
+                        <p className="text-[14px] font-bold text-gray-900">{edu.institution}</p>
+                        <p className="text-[13px] italic text-gray-700">{edu.degree}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-
         </div>
       )}
     </div>
