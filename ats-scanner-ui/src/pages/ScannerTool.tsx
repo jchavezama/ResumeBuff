@@ -1,10 +1,24 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { account } from "../appwrite";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { UploadCloud, Check, X, Loader2, FileText, ArrowRight, Lock, Download } from "lucide-react";
+import {
+  UploadCloud,
+  Check,
+  X,
+  Loader2,
+  FileText,
+  ArrowRight,
+  Lock,
+  Download,
+  Sparkles,
+  Briefcase,
+  GraduationCap,
+  AlertTriangle,
+  Plus,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface Contact {
@@ -22,6 +36,14 @@ interface Education {
 interface Skill {
   category: string;
   items: string[];
+}
+
+interface MissingSkill {
+  id: string;
+  skill_name: string;
+  category: string;
+  reason: string;
+  status: "pending" | "added" | "dismissed";
 }
 
 interface BulletPoint {
@@ -46,99 +68,75 @@ interface ResumeData {
   target_title: string;
   summary: string;
   skills: Skill[];
+  missing_skills: MissingSkill[];
   experience: Experience[];
   base_score: number;
 }
 
-const STORAGE_KEY = "resumeBuffScanState";
-
-// Converts ANY incoming data (API response or old localStorage) into the exact
-// shape the UI needs, so a missing/odd field can never crash the render.
-const normalizeResume = (data: any, resetStatus = false): ResumeData => ({
-  contact: {
-    name: data?.contact?.name ?? "",
-    email: data?.contact?.email ?? "",
-    location: data?.contact?.location ?? "",
-    links: data?.contact?.links ?? "",
-  },
-  education: Array.isArray(data?.education)
-    ? data.education.map((e: any) => ({
-        institution: e?.institution ?? "",
-        degree: e?.degree ?? "",
-      }))
-    : [],
-  target_title: data?.target_title ?? "",
-  summary: data?.summary ?? "",
-  base_score: Number(data?.base_score) || 0,
-  skills: Array.isArray(data?.skills)
-    ? data.skills.map((s: any) => {
-        const raw = typeof s === "string" ? s : s?.items ?? s?.skills ?? s?.list ?? [];
-        const items: string[] = Array.isArray(raw)
-          ? raw.map((x: any) => String(x))
-          : typeof raw === "string"
-          ? raw.split(",").map((x: string) => x.trim()).filter(Boolean)
-          : [];
-        return { category: s?.category ?? s?.name ?? "Skills", items };
-      }).filter((s: Skill) => s.items.length > 0)
-    : [],
-  experience: Array.isArray(data?.experience)
-    ? data.experience.map((exp: any, expIdx: number) => ({
-        company_name: exp?.company_name ?? "",
-        job_title: exp?.job_title ?? "",
-        company_description: exp?.company_description ?? "",
-        dates: exp?.dates ?? "",
-        bullets: Array.isArray(exp?.bullets)
-          ? exp.bullets.map((b: any, i: number) => ({
-              id: b?.id ? String(b.id) : `exp${expIdx}-b${i}`,
-              original_text: b?.original_text ?? "",
-              proposed_text: b?.proposed_text ?? "",
-              reason: b?.reason ?? "",
-              status: resetStatus
-                ? "pending"
-                : b?.status === "approved" || b?.status === "rejected"
-                ? b.status
-                : "pending",
-            }))
-          : [],
-      }))
-    : [],
-});
+type TemplateType = "starter" | "experienced";
+type NullableFile = File | null;
+type NullableResume = ResumeData | null;
 
 export default function ScannerTool() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<NullableFile>(null);
   const [jobDescription, setJobDescription] = useState("");
+  const [templateType, setTemplateType] = useState<TemplateType>("starter");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+  const [resumeData, setResumeData] = useState<NullableResume>(null);
+  const [currentScore, setCurrentScore] = useState(0);
 
-  const totalBullets = resumeData?.experience.reduce((acc, exp) => acc + exp.bullets.length, 0) || 0;
-  const approvedCount =
-    resumeData?.experience.reduce((acc, exp) => acc + exp.bullets.filter((b) => b.status === "approved").length, 0) || 0;
-  const pendingEditsCount =
-    resumeData?.experience.reduce((acc, exp) => acc + exp.bullets.filter((b) => b.status === "pending").length, 0) || 0;
-  const baseScore = resumeData?.base_score || 0;
+  const totalBullets = resumeData
+    ? resumeData.experience.reduce((acc, exp) => acc + exp.bullets.length, 0)
+    : 0;
+  const totalMissingSkills = resumeData?.missing_skills
+    ? resumeData.missing_skills.length
+    : 0;
+  const totalActionableItems = totalBullets + totalMissingSkills;
 
-  // Score is derived from approvals, so it can never drift from the saved data,
-  // and approving every edit lands exactly on 100.
-  const pointsPerEdit = totalBullets > 0 ? (100 - baseScore) / totalBullets : 0;
-  const currentScore = Math.min(100, Math.round(baseScore + approvedCount * pointsPerEdit));
+  const pointsPerEdit =
+    totalActionableItems > 0
+      ? Math.max(
+          1,
+          Math.floor((100 - (resumeData?.base_score || 0)) / totalActionableItems)
+        )
+      : 0;
+
+  const pendingBulletsCount = resumeData
+    ? resumeData.experience.reduce(
+        (acc, exp) =>
+          acc + exp.bullets.filter((b) => b.status === "pending").length,
+        0
+      )
+    : 0;
+
+  const pendingSkillsCount = resumeData?.missing_skills
+    ? resumeData.missing_skills.filter((s) => s.status === "pending").length
+    : 0;
+
+  const pendingEditsCount = pendingBulletsCount + pendingSkillsCount;
   const isScanComplete = resumeData !== null;
 
   useEffect(() => {
-    const savedState = localStorage.getItem(STORAGE_KEY);
+    const savedState = localStorage.getItem("resumeBuffScanState");
     if (savedState) {
       try {
-        const { resumeData: savedData } = JSON.parse(savedState);
-        if (savedData) {
-          setResumeData(normalizeResume(savedData));
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
+        const parsed = JSON.parse(savedState);
+        if (parsed.resumeData) {
+          const safeResume: ResumeData = {
+            ...parsed.resumeData,
+            missing_skills: parsed.resumeData.missing_skills || [],
+          };
+          setResumeData(safeResume);
+        }
+        setCurrentScore(parsed.currentScore || 0);
+        if (parsed.templateType) {
+          setTemplateType(parsed.templateType);
         }
       } catch (e) {
         console.error("Failed to parse saved scan", e);
-        localStorage.removeItem(STORAGE_KEY);
       }
     }
 
@@ -146,7 +144,7 @@ export default function ScannerTool() {
       try {
         const currentAccount = await account.get();
         setUser(currentAccount);
-      } catch (error) {
+      } catch (err) {
         setUser(null);
       } finally {
         setAuthLoading(false);
@@ -157,35 +155,29 @@ export default function ScannerTool() {
 
   useEffect(() => {
     if (resumeData) {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ resumeData }));
-      } catch (e) {
-        console.error("Failed to save scan", e);
-      }
+      localStorage.setItem(
+        "resumeBuffScanState",
+        JSON.stringify({ resumeData, currentScore, templateType })
+      );
     }
-  }, [resumeData]);
-
-  // The resume preview is always a true US Letter page (816x1056 CSS px) and is
-  // scaled down to fit narrow screens, so phones see the whole page instead of a
-  // squished or clipped layout.
-  const previewWrapRef = useRef<HTMLDivElement>(null);
-  const [previewScale, setPreviewScale] = useState(1);
-  const showPreview = resumeData !== null && !!user;
-
-  useEffect(() => {
-    const el = previewWrapRef.current;
-    if (!el) return;
-    const update = () => setPreviewScale(Math.min(1, el.clientWidth / 816));
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [showPreview]);
+  }, [resumeData, currentScore, templateType]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
     }
+  };
+
+  const handleJobDescChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setJobDescription(e.target.value);
+  };
+
+  const selectStarterTemplate = () => {
+    setTemplateType("starter");
+  };
+
+  const selectExperiencedTemplate = () => {
+    setTemplateType("experienced");
   };
 
   const handleScan = async () => {
@@ -201,6 +193,7 @@ export default function ScannerTool() {
       const formData = new FormData();
       formData.append("resume", file);
       formData.append("job_description", jobDescription);
+      formData.append("template_type", templateType);
 
       const response = await fetch("https://resumebuff-api.onrender.com/api/scan", {
         method: "POST",
@@ -209,15 +202,25 @@ export default function ScannerTool() {
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        const detail =
-          typeof errData.detail === "string" ? errData.detail : errData.detail ? JSON.stringify(errData.detail) : "";
-        throw new Error(detail || "Server error. Please try again.");
+        throw new Error(errData.detail || "Server error. Check Python terminal.");
       }
 
       const data = await response.json();
-      console.log("API response:", data);
 
-      setResumeData(normalizeResume(data, true));
+      const formattedData: ResumeData = {
+        ...data,
+        missing_skills: (data.missing_skills || []).map((ms: any) => ({
+          ...ms,
+          status: "pending",
+        })),
+        experience: data.experience.map((exp: any) => ({
+          ...exp,
+          bullets: exp.bullets.map((b: any) => ({ ...b, status: "pending" })),
+        })),
+      };
+
+      setResumeData(formattedData);
+      setCurrentScore(data.base_score);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -225,17 +228,75 @@ export default function ScannerTool() {
     }
   };
 
-  const handleReview = (expIndex: number, bulletId: string, decision: "approved" | "rejected") => {
+  const handleReview = (
+    expIndex: number,
+    bulletId: string,
+    decision: "approved" | "rejected"
+  ) => {
     setResumeData((prev) => {
       if (!prev) return prev;
       const newData = { ...prev };
       newData.experience = [...newData.experience];
       newData.experience[expIndex] = { ...newData.experience[expIndex] };
-      newData.experience[expIndex].bullets = newData.experience[expIndex].bullets.map((b) =>
-        b.id === bulletId ? { ...b, status: decision } : b
-      );
+      newData.experience[expIndex].bullets = newData.experience[
+        expIndex
+      ].bullets.map((b) => (b.id === bulletId ? { ...b, status: decision } : b));
       return newData;
     });
+
+    if (decision === "approved") {
+      setCurrentScore((prev) => Math.min(prev + pointsPerEdit, 100));
+    }
+  };
+
+  const handleMissingSkillAction = (
+    skillId: string,
+    decision: "added" | "dismissed"
+  ) => {
+    setResumeData((prev) => {
+      if (!prev) return prev;
+      const targetSkill = prev.missing_skills.find((s) => s.id === skillId);
+      if (!targetSkill) return prev;
+
+      const updatedMissing = prev.missing_skills.map((s) =>
+        s.id === skillId ? { ...s, status: decision } : s
+      );
+
+      let updatedSkills = prev.skills.map((group) => ({
+        ...group,
+        items: [...group.items],
+      }));
+
+      if (decision === "added") {
+        const existingCatIndex = updatedSkills.findIndex(
+          (g) => g.category.toLowerCase() === targetSkill.category.toLowerCase()
+        );
+
+        if (existingCatIndex >= 0) {
+          const alreadyExists = updatedSkills[existingCatIndex].items.some(
+            (item) => item.toLowerCase() === targetSkill.skill_name.toLowerCase()
+          );
+          if (!alreadyExists) {
+            updatedSkills[existingCatIndex].items.push(targetSkill.skill_name);
+          }
+        } else {
+          updatedSkills.push({
+            category: targetSkill.category || "Additional Skills",
+            items: [targetSkill.skill_name],
+          });
+        }
+      }
+
+      return {
+        ...prev,
+        skills: updatedSkills,
+        missing_skills: updatedMissing,
+      };
+    });
+
+    if (decision === "added") {
+      setCurrentScore((prev) => Math.min(prev + pointsPerEdit, 100));
+    }
   };
 
   const getScoreColor = (score: number) => {
@@ -247,22 +308,56 @@ export default function ScannerTool() {
   const handleReset = () => {
     setFile(null);
     setResumeData(null);
+    setCurrentScore(0);
     setError("");
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem("resumeBuffScanState");
   };
 
   const handleDownloadPDF = () => {
-    // The browser's print dialog saves a real text-based PDF (selectable text,
-    // which is what ATS software needs). The page title becomes the default filename.
-    const safeName = (resumeData?.contact.name || user?.name || "Resume").replace(/\s+/g, "_");
-    const prevTitle = document.title;
-    document.title = `${safeName}_Resume`;
-    const restore = () => {
-      document.title = prevTitle;
-      window.removeEventListener("afterprint", restore);
-    };
-    window.addEventListener("afterprint", restore);
-    window.print();
+    const element = document.getElementById("resume-preview");
+    if (!element) return;
+
+    const printWindow = window.open("", "_blank", "width=850,height=1100");
+    if (!printWindow) return;
+
+    const cleanHtml = element.innerHTML.replace(/bg-emerald-100\/70/g, "");
+    const pageMargin = templateType === "starter" ? "0.4in 0.5in" : "0.5in 0.6in";
+    const docTitle =
+      (resumeData?.contact.name || "Optimized").replace(/\s+/g, "_") + "_Resume";
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${docTitle}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @page {
+              size: letter portrait;
+              margin: ${pageMargin};
+            }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              color: #000000;
+              background: #ffffff;
+              -webkit-print-color-adjust: exact;
+            }
+          </style>
+        </head>
+        <body>
+          <div>${cleanHtml}</div>
+          <script>
+            window.onload = () => {
+              setTimeout(() => {
+                window.print();
+                window.close();
+              }, 350);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   if (authLoading) {
@@ -273,55 +368,95 @@ export default function ScannerTool() {
     );
   }
 
+  const isScanDisabled = loading || !file || !jobDescription;
+  const starterCardStyle =
+    templateType === "starter"
+      ? "p-5 rounded-xl border-2 cursor-pointer transition-all text-left space-y-2 border-primary bg-primary/5 shadow-sm"
+      : "p-5 rounded-xl border-2 cursor-pointer transition-all text-left space-y-2 border-border hover:border-primary/40 bg-muted/30";
+  const experiencedCardStyle =
+    templateType === "experienced"
+      ? "p-5 rounded-xl border-2 cursor-pointer transition-all text-left space-y-2 border-primary bg-primary/5 shadow-sm"
+      : "p-5 rounded-xl border-2 cursor-pointer transition-all text-left space-y-2 border-border hover:border-primary/40 bg-muted/30";
+
+  const starterBtnVariant = templateType === "starter" ? "default" : "outline";
+  const experiencedBtnVariant = templateType === "experienced" ? "default" : "outline";
+  const scoreColorClass =
+    "text-5xl font-extrabold tracking-tighter " + getScoreColor(currentScore);
+
+  const previewContainerClass =
+    templateType === "starter"
+      ? "bg-white text-black shadow-2xl border border-gray-200 w-full max-w-[850px] font-sans text-left flex flex-col p-8 space-y-5"
+      : "bg-white text-black shadow-2xl border border-gray-200 w-full max-w-[850px] font-sans text-left flex flex-col p-10 space-y-6";
+
+  const headerNameClass =
+    templateType === "starter"
+      ? "text-3xl font-serif font-bold text-gray-900 tracking-tight"
+      : "text-4xl font-serif font-bold text-gray-900 tracking-tight";
+
+  const experienceListSpacing =
+    templateType === "starter" ? "space-y-4" : "space-y-6";
+
   return (
     <div className="max-w-7xl mx-auto py-12 px-4 space-y-8">
-      <style>{`
-        @media print {
-          @page { size: letter; margin: 0; }
-          html, body { margin: 0 !important; height: 100% !important; overflow: hidden !important; }
-          body * { visibility: hidden !important; }
-          #resume-preview, #resume-preview * { visibility: visible !important; }
-          #resume-preview {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 8.5in !important;
-            height: 11in !important;
-            max-width: none !important;
-            margin: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-            transform: none !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          /* Approved edits are highlighted on screen only, never in the PDF */
-          #resume-preview .approved-highlight {
-            background: transparent !important;
-            font-weight: 400 !important;
-            padding: 0 !important;
-          }
-        }
-      `}</style>
       <div className="text-center space-y-4">
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">AI Resume Builder</h1>
-        <p className="text-muted-foreground text-base sm:text-lg">
-          {user ? `Welcome back, ${user.name.split(" ")[0]}` : "Welcome to ResumeBuff"}. Rebuild your resume into a
-          high-converting ATS template.
+        <h1 className="text-4xl font-extrabold tracking-tight">AI Resume Builder</h1>
+        <p className="text-muted-foreground text-lg">
+          {user ? `Welcome back, ${user.name.split(" ")[0]}` : "Welcome to ResumeBuff"}. Clean, structured templates tailored to your career stage.
         </p>
       </div>
 
       {!isScanComplete ? (
         <Card className="border-primary/20 shadow-md bg-card max-w-4xl mx-auto">
-          <CardContent className="p-4 sm:p-8 space-y-6 sm:space-y-8">
-            {error && <div className="p-4 bg-destructive/10 text-destructive rounded-md font-medium">{error}</div>}
+          <CardContent className="p-8 space-y-8">
+            {error && (
+              <div className="p-4 bg-destructive/10 text-destructive rounded-md font-medium">
+                {error}
+              </div>
+            )}
 
+            {/* STEP 1: TEMPLATE SELECTION WITH RECOMMENDATIONS */}
+            <div className="space-y-4">
+              <label className="font-semibold text-lg flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" /> 1. Choose Your Career Stage & Template
+              </label>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div onClick={selectStarterTemplate} className={starterCardStyle}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-base flex items-center gap-2">
+                      <GraduationCap className="h-5 w-5 text-primary" /> 1-Page Consolidated
+                    </span>
+                    <span className="text-xs font-semibold bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
+                      Recommended for Starters
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Hey, if you're a starter, student, or early-career candidate, we recommend this template. It cuts redundancy, places education near the top, and keeps everything strictly to 1 crisp page.
+                  </p>
+                </div>
+
+                <div onClick={selectExperiencedTemplate} className={experiencedCardStyle}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-base flex items-center gap-2">
+                      <Briefcase className="h-5 w-5 text-primary" /> 2-Page Comprehensive
+                    </span>
+                    <span className="text-xs font-semibold bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
+                      Experienced Professionals
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Hey, if you're an experienced professional, we recommend this template. It includes room for an executive summary, company context descriptions, and multi-year history across up to 2 pages.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* STEP 2 & 3: UPLOAD AND JOB DESCRIPTION */}
             <div className="grid md:grid-cols-2 gap-8">
               <div className="space-y-4">
                 <label className="font-semibold text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-primary" /> 1. Upload Resume (PDF)
+                  <FileText className="h-5 w-5 text-primary" /> 2. Upload Resume (PDF)
                 </label>
-                <div className="border-2 border-dashed border-primary/30 rounded-xl h-48 p-4 flex flex-col items-center justify-center bg-muted/50 hover:bg-muted transition-colors cursor-pointer relative">
+                <div className="border-2 border-dashed border-primary/30 rounded-xl p-8 flex flex-col items-center justify-center bg-muted/50 hover:bg-muted transition-colors cursor-pointer relative min-h-[160px]">
                   <input
                     type="file"
                     accept=".pdf"
@@ -329,17 +464,19 @@ export default function ScannerTool() {
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <UploadCloud className="h-10 w-10 text-primary mb-2" />
-                  <span className="font-medium text-center break-all line-clamp-2">{file ? file.name : "Drag & drop or click to browse"}</span>
+                  <span className="font-medium text-center">
+                    {file ? file.name : "Drag & drop or click to browse"}
+                  </span>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <label className="font-semibold text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-primary" /> 2. Paste Job Description
+                  <FileText className="h-5 w-5 text-primary" /> 3. Paste Job Description
                 </label>
                 <Textarea
-                  className="h-48 min-h-0 resize-none overflow-y-auto [field-sizing:fixed] bg-muted/50 border-primary/30 focus-visible:ring-primary"
-                  onChange={(e) => setJobDescription(e.target.value)}
+                  className="min-h-[160px] resize-none bg-muted/50 border-primary/30 focus-visible:ring-primary"
+                  onChange={handleJobDescChange}
                   placeholder="Paste the raw text of the job posting here..."
                   value={jobDescription}
                 />
@@ -347,31 +484,30 @@ export default function ScannerTool() {
             </div>
 
             <Button
-              className="w-full text-base sm:text-lg h-auto min-h-14 py-3 rounded-full shadow-lg whitespace-normal"
-              disabled={loading || !file || !jobDescription}
+              className="w-full text-lg h-14 rounded-full shadow-lg"
+              disabled={isScanDisabled}
               onClick={handleScan}
               size="lg"
             >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Structuring Template & Generating Edits...
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Consolidating & Scanning for Missing Skills...
                 </>
               ) : (
-                "Build ATS-Optimized Resume"
+                `Build ${templateType === "starter" ? "1-Page Starter" : "2-Page Experienced"} Resume`
               )}
             </Button>
           </CardContent>
         </Card>
       ) : !user ? (
         <Card className="border-primary/20 shadow-md bg-card max-w-2xl mx-auto">
-          <CardContent className="p-6 sm:p-16 text-center space-y-6">
+          <CardContent className="p-16 text-center space-y-6">
             <div className="mx-auto w-20 h-20 bg-primary/10 flex items-center justify-center rounded-full mb-4">
               <Lock className="h-10 w-10 text-primary" />
             </div>
             <h2 className="text-3xl font-bold">Template Built Successfully!</h2>
-            <p className="text-base sm:text-xl text-muted-foreground max-w-lg mx-auto">
-              We've successfully restructured your experience. Log in or create a free account to review your edits and
-              export your high-converting PDF.
+            <p className="text-xl text-muted-foreground max-w-lg mx-auto">
+              We've restructured your resume and identified missing job keywords. Log in or create a free account to review your edits and export your PDF.
             </p>
             <Button asChild className="rounded-full text-lg h-14 px-8 mt-4" size="lg">
               <Link to="/login">Log In / Sign Up to View Results</Link>
@@ -385,11 +521,11 @@ export default function ScannerTool() {
             <Card className="border-primary/20 shadow-md">
               <CardContent className="p-6 flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold">Match Score</h2>
+                  <h2 className="text-2xl font-bold">ATS Match Score</h2>
                   <p className="text-muted-foreground text-sm mt-1">
                     {pendingEditsCount > 0
-                      ? `Review ${pendingEditsCount} edits to improve your score.`
-                      : "Review complete! You are ready to export."}
+                      ? `${pendingEditsCount} suggestions remaining to boost your score.`
+                      : "Review complete! Ready for PDF export."}
                   </p>
                 </div>
                 <div className="flex flex-col items-center">
@@ -397,109 +533,238 @@ export default function ScannerTool() {
                     key={currentScore}
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    className={`text-5xl font-extrabold tracking-tighter ${getScoreColor(currentScore)}`}
+                    className={scoreColorClass}
                   >
                     {currentScore}
                   </motion.div>
-                  <span className="text-xs font-semibold text-muted-foreground mt-1">out of 100</span>
+                  <span className="text-xs font-semibold text-muted-foreground mt-1">
+                    out of 100
+                  </span>
                 </div>
               </CardContent>
             </Card>
 
-            <div className="space-y-8 max-h-[60vh] xl:max-h-[750px] overflow-y-auto pr-2 pb-10">
-              {resumeData!.experience.map((exp, expIdx) => (
-                <div key={expIdx} className="space-y-4">
-                  {exp.bullets.length > 0 && (
-                    <h3 className="font-bold text-lg text-primary border-b pb-2">{exp.company_name} Updates</h3>
-                  )}
+            {/* Live Template Switcher */}
+            <div className="bg-muted/50 p-3 rounded-xl border flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-muted-foreground pl-2">
+                Active Layout:
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={starterBtnVariant}
+                  onClick={selectStarterTemplate}
+                  className="h-8 text-xs"
+                >
+                  1-Page Starter
+                </Button>
+                <Button
+                  size="sm"
+                  variant={experiencedBtnVariant}
+                  onClick={selectExperiencedTemplate}
+                  className="h-8 text-xs"
+                >
+                  2-Page Experienced
+                </Button>
+              </div>
+            </div>
 
-                  <AnimatePresence>
-                    {exp.bullets.map((edit) => (
-                      <motion.div
-                        key={edit.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, height: 0 }}
-                      >
-                        <Card
-                          className={`border-l-4 shadow-sm transition-colors ${
-                            edit.status === "approved"
-                              ? "border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
-                              : edit.status === "rejected"
-                              ? "border-l-destructive bg-destructive/5 dark:bg-destructive/10"
-                              : "border-l-primary"
-                          }`}
+            <div className="space-y-8 max-h-[700px] overflow-y-auto pr-2 pb-10">
+              {/* MISSING SKILLS & EXPERIENCE GAP BOX */}
+              {resumeData.missing_skills && resumeData.missing_skills.length > 0 && (
+                <Card className="border-amber-500/40 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-bold flex items-center gap-2 text-amber-800 dark:text-amber-400">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      Missing Skills & Experience Gap
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      The job description asks for these skills, but they aren't on your resume yet. Add them to your Technical Skills section to boost your ATS match rate:
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {resumeData.missing_skills.map((ms) => {
+                      const onAddSkill = () => {
+                        handleMissingSkillAction(ms.id, "added");
+                      };
+                      const onDismissSkill = () => {
+                        handleMissingSkillAction(ms.id, "dismissed");
+                      };
+
+                      return (
+                        <div
+                          key={ms.id}
+                          className="p-3 rounded-lg bg-background border border-amber-500/20 flex flex-col gap-2 shadow-sm"
                         >
-                          <CardHeader className="pb-3">
-                            <div className="flex justify-between items-start">
-                              <CardTitle className="text-xs font-bold uppercase tracking-wider text-primary">
-                                Bullet Rewrite
-                              </CardTitle>
-                              <span className="text-xs font-semibold bg-muted px-2 py-1 rounded-md text-muted-foreground">
-                                +{Math.round(pointsPerEdit)} Pts
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="font-bold text-sm text-foreground">
+                                {ms.skill_name}
+                              </span>
+                              <span className="ml-2 text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                                {ms.category}
                               </span>
                             </div>
-                            <p className="text-sm italic text-muted-foreground mt-2 border-l-2 pl-3">
-                              "{edit.original_text}"
-                            </p>
-                          </CardHeader>
+                            <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                              +{pointsPerEdit} Pts
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{ms.reason}</p>
 
-                          <CardContent className="space-y-4">
-                            <div className="flex items-start gap-3 bg-background p-3 rounded-md border border-primary/10">
-                              <ArrowRight className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
-                              <p className="text-sm font-medium text-foreground leading-snug">{edit.proposed_text}</p>
+                          {ms.status === "pending" ? (
+                            <div className="flex justify-end gap-2 pt-1">
+                              <Button
+                                className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                                onClick={onDismissSkill}
+                                size="sm"
+                                variant="ghost"
+                              >
+                                Skip
+                              </Button>
+                              <Button
+                                className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                                onClick={onAddSkill}
+                                size="sm"
+                              >
+                                <Plus className="mr-1 h-3 w-3" /> Add to Resume
+                              </Button>
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              <strong className="text-foreground">Why: </strong>
-                              {edit.reason}
-                            </p>
+                          ) : (
+                            <div className="flex justify-end pt-1">
+                              <span
+                                className={
+                                  ms.status === "added"
+                                    ? "text-xs font-bold flex items-center gap-1 text-emerald-600"
+                                    : "text-xs font-bold flex items-center gap-1 text-muted-foreground"
+                                }
+                              >
+                                {ms.status === "added" ? (
+                                  <>
+                                    <Check className="h-3 w-3" /> Added to {ms.category}
+                                  </>
+                                ) : (
+                                  <>
+                                    <X className="h-3 w-3" /> Skipped
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
 
-                            {edit.status === "pending" && (
-                              <div className="flex justify-end gap-2 pt-2">
-                                <Button
-                                  className="border-destructive text-destructive hover:bg-destructive hover:text-white h-8"
-                                  onClick={() => handleReview(expIdx, edit.id, "rejected")}
-                                  size="sm"
-                                  variant="outline"
-                                >
-                                  <X className="mr-1 h-3 w-3" /> Reject
-                                </Button>
-                                <Button
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white h-8"
-                                  onClick={() => handleReview(expIdx, edit.id, "approved")}
-                                  size="sm"
-                                >
-                                  <Check className="mr-1 h-3 w-3" /> Approve
-                                </Button>
-                              </div>
-                            )}
+              {/* BULLET POINT REWRITES */}
+              <AnimatePresence>
+                {resumeData.experience.map((exp, expIdx) => (
+                  <div key={expIdx} className="space-y-4">
+                    {exp.bullets.length > 0 && (
+                      <h3 className="font-bold text-lg text-primary border-b pb-2">
+                        {exp.company_name}
+                      </h3>
+                    )}
 
-                            {edit.status !== "pending" && (
-                              <div className="flex justify-end pt-1">
-                                <span
-                                  className={`text-xs font-bold flex items-center gap-1 ${
-                                    edit.status === "approved" ? "text-emerald-600" : "text-destructive"
-                                  }`}
-                                >
-                                  {edit.status === "approved" ? (
-                                    <>
-                                      <Check className="h-3 w-3" /> Approved
-                                    </>
-                                  ) : (
-                                    <>
-                                      <X className="h-3 w-3" /> Rejected
-                                    </>
-                                  )}
+                    {exp.bullets.map((edit) => {
+                      const editCardClass =
+                        edit.status === "approved"
+                          ? "border-l-4 shadow-sm transition-colors border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
+                          : edit.status === "rejected"
+                          ? "border-l-4 shadow-sm transition-colors border-l-destructive bg-destructive/5 dark:bg-destructive/10"
+                          : "border-l-4 shadow-sm transition-colors border-l-primary";
+
+                      const statusBadgeClass =
+                        edit.status === "approved"
+                          ? "text-xs font-bold flex items-center gap-1 text-emerald-600"
+                          : "text-xs font-bold flex items-center gap-1 text-destructive";
+
+                      const onRejectClick = () => {
+                        handleReview(expIdx, edit.id, "rejected");
+                      };
+
+                      const onApproveClick = () => {
+                        handleReview(expIdx, edit.id, "approved");
+                      };
+
+                      return (
+                        <motion.div
+                          key={edit.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, height: 0 }}
+                        >
+                          <Card className={editCardClass}>
+                            <CardHeader className="pb-3">
+                              <div className="flex justify-between items-start">
+                                <CardTitle className="text-xs font-bold uppercase tracking-wider text-primary">
+                                  Wanted → Did → Impact Rewrite
+                                </CardTitle>
+                                <span className="text-xs font-semibold bg-muted px-2 py-1 rounded-md text-muted-foreground">
+                                  +{pointsPerEdit} Pts
                                 </span>
                               </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              ))}
+                              <p className="text-sm italic text-muted-foreground mt-2 border-l-2 pl-3">
+                                "{edit.original_text}"
+                              </p>
+                            </CardHeader>
+
+                            <CardContent className="space-y-4">
+                              <div className="flex items-start gap-3 bg-background p-3 rounded-md border border-primary/10">
+                                <ArrowRight className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                                <p className="text-sm font-medium text-foreground leading-snug">
+                                  {edit.proposed_text}
+                                </p>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                <strong className="text-foreground">Why: </strong>
+                                {edit.reason}
+                              </p>
+
+                              {edit.status === "pending" && (
+                                <div className="flex justify-end gap-2 pt-2">
+                                  <Button
+                                    className="border-destructive text-destructive hover:bg-destructive hover:text-white h-8"
+                                    onClick={onRejectClick}
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    <X className="mr-1 h-3 w-3" /> Reject
+                                  </Button>
+                                  <Button
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white h-8"
+                                    onClick={onApproveClick}
+                                    size="sm"
+                                  >
+                                    <Check className="mr-1 h-3 w-3" /> Approve
+                                  </Button>
+                                </div>
+                              )}
+
+                              {edit.status !== "pending" && (
+                                <div className="flex justify-end pt-1">
+                                  <span className={statusBadgeClass}>
+                                    {edit.status === "approved" ? (
+                                      <>
+                                        <Check className="h-3 w-3" /> Approved
+                                      </>
+                                    ) : (
+                                      <>
+                                        <X className="h-3 w-3" /> Rejected
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </AnimatePresence>
             </div>
 
             {pendingEditsCount === 0 && (
@@ -509,7 +774,7 @@ export default function ScannerTool() {
                   onClick={handleDownloadPDF}
                   size="lg"
                 >
-                  <Download className="mr-2 h-5 w-5" /> Export PDF
+                  <Download className="mr-2 h-5 w-5" /> Export ATS-Clean PDF
                 </Button>
               </div>
             )}
@@ -524,104 +789,145 @@ export default function ScannerTool() {
             </div>
           </div>
 
-          {/* RIGHT PANEL: Live PDF Preview */}
-          <div ref={previewWrapRef} className="xl:col-span-7 xl:sticky xl:top-8 min-w-0 overflow-hidden">
-            <div
-              id="resume-preview"
-              className="bg-white text-black p-10 shadow-2xl border border-gray-200 overflow-hidden text-left flex flex-col mx-auto"
-              style={{
-                width: 816,
-                height: 1056,
-                // Static system font (not the variable Inter font): Firefox drops bold/medium
-                // variable-font text from the PDF text layer, which would hide it from ATS.
-                fontFamily: "Arial, Helvetica, sans-serif",
-                transform: `scale(${previewScale})`,
-                transformOrigin: "top left",
-                marginBottom: -1056 * (1 - previewScale),
-              }}
-            >
-              {/* HEADER: Name & Contact Extracted directly from Resume */}
-              <div className="border-b-2 border-emerald-600 pb-4 mb-4 text-center">
-                <h1 className="text-4xl font-serif font-bold text-gray-900 tracking-tight">
-                  {resumeData!.contact.name || user?.name || "Your Name"}
+          {/* RIGHT PANEL: Spacious, High-Contrast Live Preview */}
+          <div className="xl:col-span-7 sticky top-8 flex flex-col items-center">
+            <div className="w-full max-w-[850px] mb-2 flex justify-between items-center text-xs text-muted-foreground px-1">
+              <span>
+                Active Template:{" "}
+                <strong>
+                  {templateType === "starter"
+                    ? "1-Page Starter (Consolidated)"
+                    : "2-Page Experienced Professional"}
+                </strong>
+              </span>
+              <span>
+                Layout: <strong className="text-emerald-600">Single-Column • Clean Hierarchy</strong>
+              </span>
+            </div>
+
+            <div id="resume-preview" className={previewContainerClass}>
+              {/* HEADER */}
+              <div className="border-b-2 border-emerald-600 pb-4">
+                <h1 className={headerNameClass}>
+                  {resumeData.contact.name || user?.name || "Your Name"}
                 </h1>
-                <p className="text-sm text-gray-600 mt-2">
-                  {[resumeData!.contact.location, resumeData!.contact.email, resumeData!.contact.links]
-                    .filter(Boolean)
-                    .join(" | ")}
-                </p>
-                <h2 className="text-lg font-bold text-emerald-600 mt-3 uppercase tracking-widest">
-                  {resumeData!.target_title}
+                <h2 className="text-base font-bold text-emerald-700 mt-1.5 uppercase tracking-widest">
+                  {resumeData.target_title}
                 </h2>
-                <p className="text-[14px] text-gray-700 mt-2 leading-relaxed text-left">{resumeData!.summary}</p>
+                <p className="text-xs text-gray-600 mt-1.5 font-medium">
+                  {[
+                    resumeData.contact.location,
+                    resumeData.contact.email,
+                    resumeData.contact.links,
+                  ]
+                    .filter(Boolean)
+                    .join("  |  ")}
+                </p>
+                {resumeData.summary && (
+                  <p className="text-[13.5px] text-gray-700 mt-3 leading-relaxed">
+                    {resumeData.summary}
+                  </p>
+                )}
               </div>
 
-              {/* SKILLS SECTION */}
-              {resumeData!.skills.length > 0 && (
-                <div className="mb-5">
-                  <h3 className="text-sm font-bold text-emerald-600 tracking-widest mb-2 uppercase border-b pb-1">
-                    Technical Skills
+              {/* STARTER TEMPLATE: Education near the top */}
+              {templateType === "starter" && resumeData.education.length > 0 && (
+                <div className="break-inside-avoid">
+                  <h3 className="text-xs font-bold text-emerald-700 tracking-widest mb-2.5 uppercase border-b border-gray-200 pb-1">
+                    Education
                   </h3>
-                  <div className="space-y-1">
-                    {resumeData!.skills.map((skill, idx) => (
-                      <p key={idx} className="text-[13px] text-gray-800 leading-snug">
-                        <strong className="text-gray-900">{skill.category}:</strong> {skill.items.join(", ")}
-                      </p>
+                  <div className="space-y-1.5">
+                    {resumeData.education.map((edu, idx) => (
+                      <div key={idx} className="flex justify-between items-baseline text-[13.5px]">
+                        <span className="font-bold text-gray-900">{edu.institution}</span>
+                        <span className="italic text-gray-700">{edu.degree}</span>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* EXPERIENCE SECTION */}
-              <div className="flex-grow">
-                <h3 className="text-sm font-bold text-emerald-600 tracking-widest mb-3 uppercase border-b pb-1">
-                  Experience
+              {/* SKILLS SECTION */}
+              <div className="break-inside-avoid">
+                <h3 className="text-xs font-bold text-emerald-700 tracking-widest mb-2.5 uppercase border-b border-gray-200 pb-1">
+                  Technical Skills
                 </h3>
-                <div className="space-y-5">
-                  {resumeData!.experience.map((exp, idx) => (
-                    <div key={idx}>
+                <div className="space-y-1.5">
+                  {resumeData.skills.map((skill, idx) => (
+                    <p key={idx} className="text-[13px] text-gray-800 leading-relaxed">
+                      <strong className="text-gray-900 font-bold">{skill.category}:</strong>{" "}
+                      {skill.items.join(", ")}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              {/* EXPERIENCE SECTION */}
+              <div>
+                <h3 className="text-xs font-bold text-emerald-700 tracking-widest mb-3.5 uppercase border-b border-gray-200 pb-1">
+                  Experience & Projects
+                </h3>
+                <div className={experienceListSpacing}>
+                  {resumeData.experience.map((exp, idx) => (
+                    <div key={idx} className="break-inside-avoid">
                       <div className="flex justify-between items-baseline mb-0.5">
                         <h4 className="font-bold text-gray-900 text-[15px]">
-                          {exp.company_name} <span className="font-normal mx-1">-</span>{" "}
-                          <span className="font-medium italic text-gray-700">{exp.job_title}</span>
+                          {exp.company_name}{" "}
+                          <span className="font-normal text-gray-400 mx-1">—</span>{" "}
+                          <span className="font-semibold italic text-gray-700">
+                            {exp.job_title}
+                          </span>
                         </h4>
                         {exp.dates && (
-                          <span className="text-[12px] text-gray-500 uppercase tracking-wider">{exp.dates}</span>
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {exp.dates}
+                          </span>
                         )}
                       </div>
-                      {exp.company_description && (
-                        <p className="text-[13px] italic text-gray-500 mb-2">{exp.company_description}</p>
+
+                      {templateType === "experienced" && exp.company_description && (
+                        <p className="text-[13px] italic text-gray-500 mb-2">
+                          {exp.company_description}
+                        </p>
                       )}
 
-                      <ul className="list-disc list-outside ml-5 space-y-1.5 mt-2">
-                        {exp.bullets.map((b) => (
-                          <li key={b.id} className="text-[13px] text-gray-800 leading-snug pl-1">
-                            {b.status === "approved" ? (
-                              <span className="approved-highlight bg-emerald-100/70 font-medium transition-colors px-0.5">
-                                {b.proposed_text}
+                      <div className="space-y-1.5 mt-2">
+                        {exp.bullets.map((b) => {
+                          const highlightClass =
+                            b.status === "approved"
+                              ? "bg-emerald-100/70 font-medium px-1 rounded"
+                              : "";
+                          return (
+                            <div
+                              key={b.id}
+                              className="flex items-start text-[13px] text-gray-800 leading-relaxed pl-1"
+                            >
+                              <span className="mr-2.5 text-emerald-700 font-bold select-none">
+                                •
                               </span>
-                            ) : (
-                              b.original_text
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                              <span className={highlightClass}>
+                                {b.status === "approved" ? b.proposed_text : b.original_text}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* EDUCATION SECTION */}
-              {resumeData!.education.length > 0 && (
-                <div className="mt-5 pt-4">
-                  <h3 className="text-sm font-bold text-emerald-600 tracking-widest mb-2 uppercase border-b pb-1">
+              {/* EXPERIENCED TEMPLATE: Education at the bottom */}
+              {templateType === "experienced" && resumeData.education.length > 0 && (
+                <div className="break-inside-avoid pt-2">
+                  <h3 className="text-xs font-bold text-emerald-700 tracking-widest mb-2.5 uppercase border-b border-gray-200 pb-1">
                     Education
                   </h3>
-                  <div className="space-y-2">
-                    {resumeData!.education.map((edu, idx) => (
-                      <div key={idx} className="flex justify-between items-baseline">
-                        <p className="text-[14px] font-bold text-gray-900">{edu.institution}</p>
-                        <p className="text-[13px] italic text-gray-700">{edu.degree}</p>
+                  <div className="space-y-1.5">
+                    {resumeData.education.map((edu, idx) => (
+                      <div key={idx} className="flex justify-between items-baseline text-[13.5px]">
+                        <span className="font-bold text-gray-900">{edu.institution}</span>
+                        <span className="italic text-gray-700">{edu.degree}</span>
                       </div>
                     ))}
                   </div>
