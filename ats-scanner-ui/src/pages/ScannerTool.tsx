@@ -77,7 +77,6 @@ type TemplateType = "starter" | "experienced";
 type NullableFile = File | null;
 type NullableResume = ResumeData | null;
 
-// Helper to guarantee a valid number and prevent NaN
 const toSafeScore = (val: any, fallback = 68): number => {
   const num = Number(val);
   return Number.isFinite(num) && num > 0 ? Math.round(num) : fallback;
@@ -210,7 +209,11 @@ export default function ScannerTool() {
       formData.append("job_description", jobDescription);
       formData.append("template_type", templateType);
 
-      const response = await fetch("[https://resumebuff-api.onrender.com/api/scan](https://resumebuff-api.onrender.com/api/scan)", {
+      const apiUrl = import.meta.env.DEV
+        ? "http://127.0.0.1:8000/api/scan"
+        : "https://resumebuff-api.onrender.com/api/scan";
+
+      const response = await fetch(apiUrl, {
         method: "POST",
         body: formData,
       });
@@ -286,7 +289,7 @@ export default function ScannerTool() {
         s.id === skillId ? { ...s, status: decision } : s
       );
 
-      let updatedSkills = prev.skills.map((group) => ({
+      const updatedSkills = prev.skills.map((group) => ({
         ...group,
         items: [...group.items],
       }));
@@ -356,7 +359,7 @@ export default function ScannerTool() {
       <html>
         <head>
           <title>${docTitle}</title>
-          <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+          <script src="https://cdn.tailwindcss.com"></script>
           <style>
             @page {
               size: letter portrait;
@@ -389,7 +392,7 @@ export default function ScannerTool() {
   if (authLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary"/>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -404,8 +407,10 @@ export default function ScannerTool() {
       ? "p-5 rounded-xl border-2 cursor-pointer transition-all text-left space-y-2 border-primary bg-primary/5 shadow-sm"
       : "p-5 rounded-xl border-2 cursor-pointer transition-all text-left space-y-2 border-border hover:border-primary/40 bg-muted/30";
 
-  const starterBtnVariant = templateType === "starter" ? "default" : "outline";
-  const experiencedBtnVariant = templateType === "experienced" ? "default" : "outline";
+  const starterBtnVariant: "default" | "outline" =
+    templateType === "starter" ? "default" : "outline";
+  const experiencedBtnVariant: "default" | "outline" =
+    templateType === "experienced" ? "default" : "outline";
   const scoreColorClass =
     "text-5xl font-extrabold tracking-tighter " + getScoreColor(displayScore);
 
@@ -443,13 +448,13 @@ export default function ScannerTool() {
             {/* STEP 1: TEMPLATE SELECTION WITH RECOMMENDATIONS */}
             <div className="space-y-4">
               <label className="font-semibold text-lg flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary"/> 1. Choose Your Career Stage & Template
+                <Sparkles className="h-5 w-5 text-primary" /> 1. Choose Your Career Stage & Template
               </label>
               <div className="grid md:grid-cols-2 gap-4">
                 <div onClick={selectStarterTemplate} className={starterCardStyle}>
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-base flex items-center gap-2">
-                      <GraduationCap className="h-5 w-5 text-primary"/> 1-Page Consolidated
+                      <GraduationCap className="h-5 w-5 text-primary" /> 1-Page Consolidated
                     </span>
                     <span className="text-xs font-semibold bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
                       Recommended for Starters
@@ -463,7 +468,7 @@ export default function ScannerTool() {
                 <div onClick={selectExperiencedTemplate} className={experiencedCardStyle}>
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-base flex items-center gap-2">
-                      <Briefcase className="h-5 w-5 text-primary"/> 2-Page Comprehensive
+                      <Briefcase className="h-5 w-5 text-primary" /> 2-Page Comprehensive
                     </span>
                     <span className="text-xs font-semibold bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
                       Experienced Professionals
@@ -480,7 +485,7 @@ export default function ScannerTool() {
             <div className="grid md:grid-cols-2 gap-8">
               <div className="space-y-4">
                 <label className="font-semibold text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-primary"/> 2. Upload Resume (PDF)
+                  <FileText className="h-5 w-5 text-primary" /> 2. Upload Resume (PDF)
                 </label>
                 <div className="border-2 border-dashed border-primary/30 rounded-xl p-8 flex flex-col items-center justify-center bg-muted/50 hover:bg-muted transition-colors cursor-pointer relative min-h-[160px]">
                   <input
@@ -489,7 +494,7 @@ export default function ScannerTool() {
                     onChange={handleFileUpload}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
-                  <UploadCloud className="h-10 w-10 text-primary mb-2"/>
+                  <UploadCloud className="h-10 w-10 text-primary mb-2" />
                   <span className="font-medium text-center">
                     {file ? file.name : "Drag & drop or click to browse"}
                   </span>
@@ -498,16 +503,26 @@ export default function ScannerTool() {
 
               <div className="space-y-4">
                 <label className="font-semibold text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-primary"/> 3. Paste Job Description
+                  <FileText className="h-5 w-5 text-primary" /> 3. Paste Job Description
                 </label>
-                <Textarea className="min-h-[160px] resize-none bg-muted/50 border-primary/30 focus-visible:ring-primary" onChange="{handleJobDescChange}" placeholder="Paste the raw text of the job posting here..." value="{jobDescription}"/>
+                <Textarea
+                  className="min-h-[160px] resize-none bg-muted/50 border-primary/30 focus-visible:ring-primary"
+                  onChange={handleJobDescChange}
+                  placeholder="Paste the raw text of the job posting here..."
+                  value={jobDescription}
+                />
               </div>
             </div>
 
-            <Button className="w-full text-lg h-14 rounded-full shadow-lg" disabled="{isScanDisabled}" onClick="{handleScan}" size="lg">
+            <Button
+              className="w-full text-lg h-14 rounded-full shadow-lg"
+              disabled={isScanDisabled}
+              onClick={handleScan}
+              size="lg"
+            >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin"/> Customizing WDI Bullets & Scanning Skill Gaps...
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Customizing WDI Bullets & Scanning Skill Gaps...
                 </>
               ) : (
                 `Build ${templateType === "starter" ? "1-Page Starter" : "2-Page Experienced"} Resume`
@@ -519,7 +534,7 @@ export default function ScannerTool() {
         <Card className="border-primary/20 shadow-md bg-card max-w-2xl mx-auto">
           <CardContent className="p-16 text-center space-y-6">
             <div className="mx-auto w-20 h-20 bg-primary/10 flex items-center justify-center rounded-full mb-4">
-              <Lock className="h-10 w-10 text-primary"/>
+              <Lock className="h-10 w-10 text-primary" />
             </div>
             <h2 className="text-3xl font-bold">Template Built Successfully!</h2>
             <p className="text-xl text-muted-foreground max-w-lg mx-auto">
@@ -566,10 +581,20 @@ export default function ScannerTool() {
                 Active Layout:
               </span>
               <div className="flex gap-2">
-                <Button className="h-8 text-xs" onClick="{selectStarterTemplate}" size="sm" variant="{starterBtnVariant}">
+                <Button
+                  className="h-8 text-xs"
+                  onClick={selectStarterTemplate}
+                  size="sm"
+                  variant={starterBtnVariant}
+                >
                   1-Page Starter
                 </Button>
-                <Button className="h-8 text-xs" onClick="{selectExperiencedTemplate}" size="sm" variant="{experiencedBtnVariant}">
+                <Button
+                  className="h-8 text-xs"
+                  onClick={selectExperiencedTemplate}
+                  size="sm"
+                  variant={experiencedBtnVariant}
+                >
                   2-Page Experienced
                 </Button>
               </div>
@@ -581,7 +606,7 @@ export default function ScannerTool() {
                 <Card className="border-amber-500/40 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm font-bold flex items-center gap-2 text-amber-800 dark:text-amber-400">
-                      <AlertTriangle className="h-4 w-4 text-amber-600"/>
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
                       Missing Skills & Experience Gap
                     </CardTitle>
                     <p className="text-xs text-muted-foreground leading-relaxed">
@@ -619,11 +644,20 @@ export default function ScannerTool() {
 
                           {ms.status === "pending" ? (
                             <div className="flex justify-end gap-2 pt-1">
-                              <Button className="h-7 text-xs text-muted-foreground hover:text-destructive" onClick="{onDismissSkill}" size="sm" variant="ghost">
+                              <Button
+                                className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                                onClick={onDismissSkill}
+                                size="sm"
+                                variant="ghost"
+                              >
                                 Skip
                               </Button>
-                              <Button className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick="{onAddSkill}" size="sm">
-                                <Plus className="mr-1 h-3 w-3"/> Add to Resume
+                              <Button
+                                className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                                onClick={onAddSkill}
+                                size="sm"
+                              >
+                                <Plus className="mr-1 h-3 w-3" /> Add to Resume
                               </Button>
                             </div>
                           ) : (
@@ -637,11 +671,11 @@ export default function ScannerTool() {
                               >
                                 {ms.status === "added" ? (
                                   <>
-                                    <Check className="h-3 w-3"/> Added to {ms.category}
+                                    <Check className="h-3 w-3" /> Added to {ms.category}
                                   </>
                                 ) : (
                                   <>
-                                    <X className="h-3 w-3"/> Skipped
+                                    <X className="h-3 w-3" /> Skipped
                                   </>
                                 )}
                               </span>
@@ -692,7 +726,7 @@ export default function ScannerTool() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, height: 0 }}
                         >
-                          <Card className="{editCardClass}">
+                          <Card className={editCardClass}>
                             <CardHeader className="pb-3">
                               <div className="flex justify-between items-start">
                                 <CardTitle className="text-xs font-bold uppercase tracking-wider text-primary">
@@ -709,7 +743,7 @@ export default function ScannerTool() {
 
                             <CardContent className="space-y-4">
                               <div className="flex items-start gap-3 bg-background p-3 rounded-md border border-primary/10">
-                                <ArrowRight className="h-4 w-4 text-primary flex-shrink-0 mt-0.5"/>
+                                <ArrowRight className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
                                 <p className="text-sm font-medium text-foreground leading-snug">
                                   {edit.proposed_text}
                                 </p>
@@ -721,11 +755,20 @@ export default function ScannerTool() {
 
                               {edit.status === "pending" && (
                                 <div className="flex justify-end gap-2 pt-2">
-                                  <Button className="border-destructive text-destructive hover:bg-destructive hover:text-white h-8" onClick="{onRejectClick}" size="sm" variant="outline">
-                                    <X className="mr-1 h-3 w-3"/> Reject
+                                  <Button
+                                    className="border-destructive text-destructive hover:bg-destructive hover:text-white h-8"
+                                    onClick={onRejectClick}
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    <X className="mr-1 h-3 w-3" /> Reject
                                   </Button>
-                                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white h-8" onClick="{onApproveClick}" size="sm">
-                                    <Check className="mr-1 h-3 w-3"/> Approve
+                                  <Button
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white h-8"
+                                    onClick={onApproveClick}
+                                    size="sm"
+                                  >
+                                    <Check className="mr-1 h-3 w-3" /> Approve
                                   </Button>
                                 </div>
                               )}
@@ -735,11 +778,11 @@ export default function ScannerTool() {
                                   <span className={statusBadgeClass}>
                                     {edit.status === "approved" ? (
                                       <>
-                                        <Check className="h-3 w-3"/> Approved
+                                        <Check className="h-3 w-3" /> Approved
                                       </>
                                     ) : (
                                       <>
-                                        <X className="h-3 w-3"/> Rejected
+                                        <X className="h-3 w-3" /> Rejected
                                       </>
                                     )}
                                   </span>
@@ -757,8 +800,12 @@ export default function ScannerTool() {
 
             {pendingEditsCount === 0 && (
               <div className="flex justify-center pt-2">
-                <Button className="w-full text-lg shadow-xl hover:scale-[1.02] transition-transform bg-primary" onClick="{handleDownloadPDF}" size="lg">
-                  <Download className="mr-2 h-5 w-5"/> Export ATS-Clean PDF
+                <Button
+                  className="w-full text-lg shadow-xl hover:scale-[1.02] transition-transform bg-primary"
+                  onClick={handleDownloadPDF}
+                  size="lg"
+                >
+                  <Download className="mr-2 h-5 w-5" /> Export ATS-Clean PDF
                 </Button>
               </div>
             )}
