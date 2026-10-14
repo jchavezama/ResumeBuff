@@ -81,45 +81,61 @@ async def scan_resume(
         client = Groq(api_key=api_key)
 
         template_rules = (
-            "STARTER (1-PAGE) MODE: Consolidate aggressively so everything fits on 1 page. "
-            "Keep the summary to 1 concise sentence (or empty string if redundant). "
-            "Leave 'company_description' as an empty string '' to save vertical space. "
-            "Consolidate redundant bullets into the top 2-3 highest-impact bullets per role."
+            "STARTER (1-PAGE) MODE: Keep the summary to 1 concise sentence. "
+            "Leave 'company_description' as an empty string '' to save vertical space."
             if template_type == "starter" else
-            "EXPERIENCED (2-PAGE) MODE: Provide a strong 2-3 line executive summary, "
-            "include a brief 1-line 'company_description' for each role, and retain 3-5 detailed bullets per role."
+            "EXPERIENCED (2-PAGE) MODE: Provide a strong 2-3 line executive summary "
+            "and include a brief 1-line 'company_description' for each role."
         )
 
         prompt = f"""
-        You are an expert technical recruiter and ATS screening API. Extract all information from the RESUME and restructure it into our strict JSON schema.
+        You are an expert technical recruiter and ATS resume writer. Extract all information from the RESUME and restructure it into our strict JSON schema.
 
-        CRITICAL ANTI-HALLUCINATION & CONSOLIDATION RULES:
+        CRITICAL ANTI-HALLUCINATION RULES:
         - NEVER invent or guess dates, metrics, or company names. If a date is missing, return "".
         - NEVER guess the candidate's name. Extract the exact name from the resume.
-        - ELIMINATE REDUNDANCY: Cut fluff, passive phrasing, and repetitive statements. Get straight to the point.
         - {template_rules}
 
-        BULLET POINT REWRITE FORMULA (Wanted -> Did -> Impact):
-        Every 'proposed_text' bullet MUST follow this exact 3-part structure:
-        1. What was wanted/needed (the problem, goal, or system requirement)
-        2. What the candidate did (the specific technical action & tools used, matching ATS keywords from the job description)
-        3. The impact (the measurable or functional result, without inventing fake numbers)
-        - Ban AI buzzwords ("spearheaded", "delved", "synergized", "orchestrated").
+        CUSTOMIZE EVERY BULLET WITH THE "WANTED -> DID -> IMPACT" (WDI) FORMULA:
+        Customize each existing bullet point on the resume into an achievement-focused WDI statement that weaves together:
+        1. What was wanted/needed (the goal, problem, or task)
+        2. What the candidate did (the specific action and tools used, aligned with the job description)
+        3. The impact (the outcome or technical benefit, keeping any real metrics from the original text without inventing fake percentages)
+
+        STUDY THESE BEFORE vs. AFTER EXAMPLES OF GREAT WDI REWRITES:
+        - Marketing Example:
+          Before (Duty-Focused): "Managed the company social media accounts and posted weekly updates."
+          After (WDI Achievement-Focused): "Wanted to increase brand awareness, so I launched a targeted LinkedIn campaign resulting in a 45% growth in inbound leads."
+        - Sales Example:
+          Before (Duty-Focused): "Responsible for cold calling prospects and closing new software deals."
+          After (WDI Achievement-Focused): "Tasked with reversing declining Q3 sales, overhauled the pitch script to secure 15 new enterprise accounts worth $120K."
+        - Engineering Example:
+          Before (Duty-Focused): "Fixed bugs in the mobile application and optimized database queries."
+          After (WDI Achievement-Focused): "Aimed to reduce user churn caused by slow load times, refactored backend APIs, slashing latency by 35%."
+
+        STRICT LINGUISTIC VARIETY & ANTI-REPETITION RULE:
+        - DO NOT start every bullet point with the same phrasing!
+        - Within the same work experience/company section, EVERY bullet point MUST use a DIFFERENT opening hook and transition style. Rotate naturally between openings like:
+          * "Wanted to [goal], so I [action], resulting in [impact]."
+          * "Tasked with [challenge], [action] to achieve [impact]."
+          * "Aimed to [objective], [action], [impact]."
+          * "To resolve/eliminate [problem], [action], which [impact]."
+          * "Challenged with [need], [action], enabling [impact]."
+          * "Focused on improving [area] by [action], driving [impact]."
+        - Reusing an opening phrase style is ONLY acceptable if it is under a DIFFERENT work experience section.
+        - Ban robotic AI buzzwords ("spearheaded", "delved", "synergized", "orchestrated", "testament").
 
         EXTRACTION INSTRUCTIONS:
         1. contact: Extract real name, email, location, and links (GitHub/LinkedIn).
         2. education: Extract all degrees and universities.
         3. target_title: Generate a clean target title matching the job description.
         4. summary: Write a consolidated, non-redundant summary based on the mode rules.
-        5. skills: Group the candidate's EXISTING technical skills into clean categories (e.g., Languages, Frameworks, Databases & Tools).
-        6. missing_skills: Compare the JOB DESCRIPTION against the RESUME. Identify 3 to 6 critical skills, technologies, or domain areas required by the job that are MISSING from the candidate's resume (e.g., "C#", "Database Management", "Kubernetes"). For each missing skill, provide:
-           - id: A unique string ID (e.g., "ms1", "ms2")
-           - skill_name: The exact concise keyword (e.g., "PostgreSQL", "C# / .NET")
-           - category: The skill category it belongs in (match one of their existing skill categories if possible, or use a clean category name like "Databases" or "Languages").
-           - reason: A 1-sentence casual note telling the user why the job wants this and why adding it boosts their ATS score.
-        7. experience: Extract work history and projects. Provide a short, conversational 'reason' (1-2 sentences) explaining how the Wanted -> Did -> Impact rewrite helps them.
-        
-        Return ONLY a JSON object matching this schema:
+        5. skills: Group the candidate's EXISTING technical skills into clean categories.
+        6. missing_skills: Compare the JOB DESCRIPTION against the RESUME. Identify 3 to 6 critical skills, tools, or domain areas required by the job that are MISSING from the resume. Provide a unique 'id', 'skill_name', matching 'category', and a 1-sentence 'reason'.
+        7. experience: Extract every role/project and customize each of its bullets using varied WDI language.
+        8. base_score: Calculate an honest starting ATS match score as an integer between 55 and 82 (e.g., 68).
+
+        Return ONLY a JSON object matching this exact schema:
         {{
           "contact": {{"name": "string", "email": "string", "location": "string", "links": "string"}},
           "education": [{{"institution": "string", "degree": "string"}}],
@@ -135,7 +151,7 @@ async def scan_resume(
               "bullets": [{{"id": "b1", "original_text": "string", "proposed_text": "string", "reason": "string"}}]
             }}
           ],
-          "base_score": 65
+          "base_score": 68
         }}
 
         RESUME:
@@ -147,11 +163,11 @@ async def scan_resume(
 
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "You output strictly in JSON format."},
+                {"role": "system", "content": "You output strictly in valid JSON format. Always include base_score as an integer."},
                 {"role": "user", "content": prompt}
             ],
             model="openai/gpt-oss-120b",
-            temperature=0.1,
+            temperature=0.25, # Slight bump so language feels natural and varied across bullets
             response_format={"type": "json_object"},
         )
 
@@ -159,7 +175,19 @@ async def scan_resume(
         if raw_text.startswith("```"):
             raw_text = raw_text.strip("`").removeprefix("json").strip()
             
-        return json.loads(raw_text)
+        parsed_data = json.loads(raw_text)
+
+        # Guarantee base_score is always a valid integer so the frontend never gets undefined/NaN
+        raw_score = parsed_data.get("base_score", parsed_data.get("score", 68))
+        try:
+            parsed_data["base_score"] = max(10, min(int(float(raw_score)), 95))
+        except (ValueError, TypeError):
+            parsed_data["base_score"] = 68
+
+        if "missing_skills" not in parsed_data or not isinstance(parsed_data["missing_skills"], list):
+            parsed_data["missing_skills"] = []
+
+        return parsed_data
 
     except Exception as e:
         import traceback
