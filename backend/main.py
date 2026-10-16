@@ -82,19 +82,21 @@ async def scan_resume(
 
         template_rules = (
             "STARTER (1-PAGE) MODE: Keep the summary to 1 concise sentence. "
-            "Leave 'company_description' as an empty string '' to save vertical space."
+            "Leave 'company_description' as an empty string '' to save vertical space. "
+            "You MUST still include EVERY company/role from the resume, but consolidate each role to its top 3 most impactful bullets."
             if template_type == "starter" else
-            "EXPERIENCED (2-PAGE) MODE: Provide a strong 2-3 line executive summary "
-            "and include a brief 1-line 'company_description' for each role."
+            "EXPERIENCED (2-PAGE) MODE: Provide a strong 2-3 line executive summary and include a brief 1-line 'company_description' for each role. "
+            "CRITICAL: You MUST include EVERY SINGLE company/role AND 100% of the bullet points from the original resume. NEVER drop, skip, or truncate any company or any bullet point!"
         )
 
         prompt = f"""
         You are an expert technical recruiter and ATS resume writer. Extract all information from the RESUME and restructure it into our strict JSON schema.
 
-        CRITICAL ANTI-HALLUCINATION RULES:
+        CRITICAL ZERO-OMISSION & ANTI-HALLUCINATION RULES:
+        - EXTRACT ALL COMPANIES/ROLES: Count every work experience entry on the resume from top to bottom. Your JSON 'experience' array MUST contain 100% of the companies/roles listed on the resume. NEVER omit older jobs or stop early!
+        - {template_rules}
         - NEVER invent or guess dates, metrics, or company names. If a date is missing, return "".
         - NEVER guess the candidate's name. Extract the exact name from the resume.
-        - {template_rules}
 
         CUSTOMIZE EVERY BULLET WITH THE "WANTED -> DID -> IMPACT" (WDI) FORMULA:
         Customize each existing bullet point on the resume into an achievement-focused WDI statement that weaves together:
@@ -130,9 +132,10 @@ async def scan_resume(
         2. education: Extract all degrees and universities.
         3. target_title: Generate a clean target title matching the job description.
         4. summary: Write a consolidated, non-redundant summary based on the mode rules.
-        5. skills: Group the candidate's EXISTING technical skills into clean categories.
-        6. missing_skills: Compare the JOB DESCRIPTION against the RESUME. Identify 3 to 6 critical skills, tools, or domain areas required by the job that are MISSING from the resume. Provide a unique 'id', 'skill_name', matching 'category', and a 1-sentence 'reason'.
-        7. experience: Extract every role/project and customize each of its bullets using varied WDI language.
+        5. skills: Group the candidate's EXISTING technical skills into clean categories (e.g., "Languages", "Frontend & UI", "Backend & Architecture", "Cloud & DevOps", "Data & Messaging").
+        6. missing_skills: Compare the JOB DESCRIPTION against the RESUME. Identify 3 to 6 critical skills, tools, or domain areas required by the job that are MISSING from the resume.
+           - IMPORTANT: Set each missing skill's 'category' to match one of the EXACT category names you used in 'skills' above so it merges cleanly when added.
+        7. experience: Extract EVERY role/project from the resume without exception, and customize each of its bullets using varied WDI language. Keep each bullet's 'reason' concise (under 15 words) so the full work history is never truncated.
         8. base_score: Calculate an honest starting ATS match score as an integer between 55 and 82 (e.g., 68).
 
         Return ONLY a JSON object matching this exact schema:
@@ -163,11 +166,15 @@ async def scan_resume(
 
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "You output strictly in valid JSON format. Always include base_score as an integer."},
+                {
+                    "role": "system",
+                    "content": "You output strictly in valid JSON format. You NEVER omit or truncate work experience entries from the resume."
+                },
                 {"role": "user", "content": prompt}
             ],
             model="openai/gpt-oss-120b",
-            temperature=0.25, # Slight bump so language feels natural and varied across bullets
+            temperature=0.25,
+            max_tokens=8000, # Prevents output cutoff on multi-page resumes
             response_format={"type": "json_object"},
         )
 
@@ -177,7 +184,6 @@ async def scan_resume(
             
         parsed_data = json.loads(raw_text)
 
-        # Guarantee base_score is always a valid integer so the frontend never gets undefined/NaN
         raw_score = parsed_data.get("base_score", parsed_data.get("score", 68))
         try:
             parsed_data["base_score"] = max(10, min(int(float(raw_score)), 95))
