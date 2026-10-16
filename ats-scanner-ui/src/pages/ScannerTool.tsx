@@ -226,8 +226,10 @@ export default function ScannerTool() {
       formData.append("template_type", templateType);
 
       const apiUrl = import.meta.env.DEV
-        ? "[http://127.0.0.1:8000/api/scan](http://127.0.0.1:8000/api/scan)"
-        : "[https://resumebuff-api.onrender.com/api/scan](https://resumebuff-api.onrender.com/api/scan)";
+        ? "http://127.0.0.1:8000/api/scan"
+        : "https://resumebuff-api.onrender.com/api/scan";
+
+      <script src="https://cdn.tailwindcss.com"></script>
 
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -528,11 +530,11 @@ export default function ScannerTool() {
                 <label className="font-semibold text-lg flex items-center gap-2">
                   <FileText className="h-5 w-5 text-primary"/> 3. Paste Job Description
                 </label>
-                <Textarea className="min-h-[160px] resize-none bg-muted/50 border-primary/30 focus-visible:ring-primary" onChange="{handleJobDescChange}" placeholder="Paste the raw text of the job posting here..." value="{jobDescription}"/>
+                <Textarea className="min-h-[160px] resize-none bg-muted/50 border-primary/30 focus-visible:ring-primary" onChange={handleJobDescChange} placeholder="Paste the raw text of the job posting here..." value={jobDescription}/>
               </div>
             </div>
 
-            <Button className="w-full text-lg h-14 rounded-full shadow-lg" disabled="{isScanDisabled}" onClick="{handleScan}" size="lg">
+            <Button className="w-full text-lg h-14 rounded-full shadow-lg" disabled={isScanDisabled} onClick={handleScan} size="lg">
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin"/> Auditing Bullets & Checking What Actually Needs Work...
@@ -613,10 +615,10 @@ export default function ScannerTool() {
                 Active Layout:
               </span>
               <div className="flex gap-2">
-                <Button className="h-8 text-xs" onClick="{selectStarterTemplate}" size="sm" variant="{starterBtnVariant}">
+                <Button className="h-8 text-xs" onClick={selectStarterTemplate} size="sm" variant={starterBtnVariant}>
                   1-Page Starter
                 </Button>
-                <Button className="h-8 text-xs" onClick="{selectExperiencedTemplate}" size="sm" variant="{experiencedBtnVariant}">
+                <Button className="h-8 text-xs" onClick={selectExperiencedTemplate} size="sm" variant={experiencedBtnVariant}>
                   2-Page Experienced
                 </Button>
               </div>
@@ -666,10 +668,10 @@ export default function ScannerTool() {
 
                           {ms.status === "pending" ? (
                             <div className="flex justify-end gap-2 pt-1">
-                              <Button className="h-7 text-xs text-muted-foreground hover:text-destructive" onClick="{onDismissSkill}" size="sm" variant="ghost">
+                              <Button className="h-7 text-xs text-muted-foreground hover:text-destructive" onClick={onDismissSkill} size="sm" variant="ghost">
                                 Skip
                               </Button>
-                              <Button className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick="{onAddSkill}" size="sm">
+                              <Button className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick={onAddSkill} size="sm">
                                 <Plus className="mr-1 h-3 w-3"/> Add to Resume
                               </Button>
                             </div>
@@ -770,7 +772,7 @@ export default function ScannerTool() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, height: 0 }}
                         >
-                          <Card className="{editCardClass}">
+                          <Card className={editCardClass}>
                             <CardHeader className="pb-3">
                               <div className="flex justify-between items-start">
                                 <CardTitle className="text-xs font-bold uppercase tracking-wider text-primary">
@@ -799,10 +801,10 @@ export default function ScannerTool() {
 
                               {edit.status === "pending" && (
                                 <div className="flex justify-end gap-2 pt-2">
-                                  <Button className="border-destructive text-destructive hover:bg-destructive hover:text-white h-8" onClick="{onRejectClick}" size="sm" variant="outline">
+                                  <Button className="border-destructive text-destructive hover:bg-destructive hover:text-white h-8" onClick={onRejectClick} size="sm" variant="outline">
                                     <X className="mr-1 h-3 w-3"/> Reject
                                   </Button>
-                                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white h-8" onClick="{onApproveClick}" size="sm">
+                                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white h-8" onClick={onApproveClick} size="sm">
                                     <Check className="mr-1 h-3 w-3"/> Approve
                                   </Button>
                                 </div>
@@ -835,7 +837,7 @@ export default function ScannerTool() {
 
             {pendingEditsCount === 0 && (
               <div className="flex justify-center pt-2">
-                <Button className="w-full text-lg shadow-xl hover:scale-[1.02] transition-transform bg-primary" onClick="{handleDownloadPDF}" size="lg">
+                <Button className="w-full text-lg shadow-xl hover:scale-[1.02] transition-transform bg-primary" onClick={handleDownloadPDF} size="lg">
                   <Download className="mr-2 h-5 w-5"/> Export ATS-Clean PDF
                 </Button>
               </div>
