@@ -106,7 +106,8 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({
               <FileText className="h-5 w-5 text-primary" /> 2. Upload Resume
               (PDF)
             </label>
-            <div className="border-2 border-dashed border-primary/30 rounded-xl p-8 flex flex-col items-center justify-center bg-muted/50 hover:bg-muted transition-colors cursor-pointer relative min-h-[160px]">
+            {/* Fixed height (h-48) so it always matches the job description box */}
+            <div className="border-2 border-dashed border-primary/30 rounded-xl p-8 flex flex-col items-center justify-center bg-muted/50 hover:bg-muted transition-colors cursor-pointer relative h-48">
               <input
                 type="file"
                 accept=".pdf"
@@ -114,7 +115,7 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
               <UploadCloud className="h-10 w-10 text-primary mb-2" />
-              <span className="font-medium text-center">
+              <span className="font-medium text-center max-w-full truncate">
                 {file ? file.name : "Drag & drop or click to browse"}
               </span>
             </div>
@@ -125,8 +126,10 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({
               <FileText className="h-5 w-5 text-primary" /> 3. Paste Job
               Description
             </label>
+            {/* Fixed height (h-48), scrolls when the pasted text is long.
+                [field-sizing:fixed] overrides the auto-grow behavior in newer shadcn Textarea. */}
             <Textarea
-              className="min-h-[160px] resize-none bg-muted/50 border-primary/30 focus-visible:ring-primary"
+              className="h-48 min-h-0 resize-none overflow-y-auto [field-sizing:fixed] bg-muted/50 border-primary/30 focus-visible:ring-primary"
               onChange={onJobDescChange}
               placeholder="Paste the raw text of the job posting here..."
               value={jobDescription}

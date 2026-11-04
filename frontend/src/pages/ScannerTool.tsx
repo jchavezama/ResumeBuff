@@ -70,51 +70,40 @@ export default function ScannerTool() {
   const pendingEditsCount = pendingBulletsCount + pendingSkillsCount;
 
   useEffect(() => {
-    const savedState = localStorage.getItem("resumeBuffScanState");
-    if (savedState) {
-      try {
-        const parsed = JSON.parse(savedState);
-        if (parsed.resumeData) {
-          const base = toSafeScore(
-            parsed.resumeData.base_score ?? parsed.resumeData.score,
-            72
-          );
-          setResumeData({
-            ...parsed.resumeData,
-            base_score: base,
-            missing_skills: parsed.resumeData.missing_skills || [],
-          });
-          setCurrentScore(toSafeScore(parsed.currentScore, base));
-        }
-        if (parsed.templateType) setTemplateType(parsed.templateType);
-        if (parsed.theme) {
-          setTheme({ ...DEFAULT_RESUME_THEME, ...parsed.theme });
-        }
-      } catch (e) {
-        console.error("Failed to parse saved scan", e);
-      }
-    }
+    // Clear anything left over from the old localStorage approach
+    localStorage.removeItem("resumeBuffScanState");
+
+    const pending = sessionStorage.getItem("resumeBuffPendingScan");
 
     account
       .get()
-      .then((currentAccount) => setUser(currentAccount))
-      .catch(() => setUser(null))
-      .finally(() => setAuthLoading(false));
-  }, []);
+      .then((currentAccount) => {
+        setUser(currentAccount);
 
-  useEffect(() => {
-    if (resumeData) {
-      localStorage.setItem(
-        "resumeBuffScanState",
-        JSON.stringify({
-          resumeData,
-          currentScore: displayScore,
-          templateType,
-          theme,
-        })
-      );
-    }
-  }, [resumeData, displayScore, templateType, theme]);
+        // Only restore the handoff for a logged-in user
+        if (pending) {
+          try {
+            const parsed = JSON.parse(pending);
+            const base = toSafeScore(parsed.resumeData?.base_score, 72);
+            setResumeData({
+              ...parsed.resumeData,
+              base_score: base,
+              missing_skills: parsed.resumeData.missing_skills || [],
+            });
+            setCurrentScore(toSafeScore(parsed.currentScore, base));
+            if (parsed.templateType) setTemplateType(parsed.templateType);
+            if (parsed.theme) setTheme({ ...DEFAULT_RESUME_THEME, ...parsed.theme });
+          } catch (e) {
+            console.error("Failed to restore pending scan", e);
+          }
+        }
+      })
+      .catch(() => setUser(null))
+      .finally(() => {
+        sessionStorage.removeItem("resumeBuffPendingScan"); // always consume
+        setAuthLoading(false);
+      });
+  }, []);
 
   const handleThemeChange = (updated: Partial<ResumeTheme>) => {
     setTheme((prev) => ({ ...prev, ...updated }));
@@ -319,7 +308,22 @@ export default function ScannerTool() {
               className="rounded-full text-lg h-14 px-8 mt-4"
               size="lg"
             >
-              <Link to="/login">Log In / Sign Up to View Results</Link>
+              <Link
+                to="/login"
+                onClick={() =>
+                  sessionStorage.setItem(
+                    "resumeBuffPendingScan",
+                    JSON.stringify({
+                      resumeData,
+                      currentScore: displayScore,
+                      templateType,
+                      theme,
+                    })
+                  )
+                }
+              >
+                Log In / Sign Up to View Results
+              </Link>
             </Button>
           </CardContent>
         </Card>
