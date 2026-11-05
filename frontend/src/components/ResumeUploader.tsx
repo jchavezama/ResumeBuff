@@ -16,6 +16,8 @@ interface ResumeUploaderProps {
   jobDescription: string;
   templateType: TemplateType;
   loading: boolean;
+  /** True for a brief moment after the response arrives so the bar can reach 100%. */
+  finishing?: boolean;
   error: string;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onJobDescChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
@@ -28,6 +30,7 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({
   jobDescription,
   templateType,
   loading,
+  finishing = false,
   error,
   onFileUpload,
   onJobDescChange,
@@ -154,7 +157,7 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({
           </Button>
 
           {/* Rotating status messages + progress bar while the backend works */}
-          {loading && <AnalysisProgress />}
+          {loading && <AnalysisProgress done={finishing} />}
         </div>
       </CardContent>
     </Card>
