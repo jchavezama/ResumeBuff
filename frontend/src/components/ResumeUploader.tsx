@@ -3,13 +3,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
   UploadCloud,
-  Loader2,
   FileText,
   Sparkles,
   Briefcase,
   GraduationCap,
 } from "lucide-react";
 import type { TemplateType } from "@/types/resume";
+import AnalysisProgress from "./AnalysisProgress";
 
 interface ResumeUploaderProps {
   file: File | null;
@@ -61,12 +61,12 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({
               onClick={() => onTemplateChange("starter")}
               className={getCardStyle("starter")}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-bold text-base flex items-center gap-2">
                   <GraduationCap className="h-5 w-5 text-primary" /> 1-Page
                   Consolidated
                 </span>
-                <span className="text-xs font-semibold bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
+                <span className="shrink-0 whitespace-nowrap text-xs font-semibold bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
                   Recommended for Starters
                 </span>
               </div>
@@ -81,12 +81,12 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({
               onClick={() => onTemplateChange("experienced")}
               className={getCardStyle("experienced")}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-bold text-base flex items-center gap-2">
                   <Briefcase className="h-5 w-5 text-primary" /> 2-Page
                   Comprehensive
                 </span>
-                <span className="text-xs font-semibold bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
+                <span className="shrink-0 whitespace-nowrap text-xs font-semibold bg-primary/15 text-primary px-2.5 py-0.5 rounded-full">
                   Experienced Professionals
                 </span>
               </div>
@@ -137,25 +137,25 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({
           </div>
         </div>
 
-        <Button
-          className="w-full text-lg h-14 rounded-full shadow-lg"
-          disabled={isScanDisabled}
-          onClick={onScan}
-          size="lg"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Auditing Bullets
-              & Checking What Actually Needs Work...
-            </>
-          ) : (
-            `Build ${
-              templateType === "starter"
-                ? "1-Page Starter"
-                : "2-Page Experienced"
-            } Resume`
-          )}
-        </Button>
+        <div className="space-y-4">
+          <Button
+            className="w-full text-lg h-14 rounded-full shadow-lg"
+            disabled={isScanDisabled}
+            onClick={onScan}
+            size="lg"
+          >
+            {loading
+              ? "Analyzing your resume..."
+              : `Build ${
+                  templateType === "starter"
+                    ? "1-Page Starter"
+                    : "2-Page Experienced"
+                } Resume`}
+          </Button>
+
+          {/* Rotating status messages + progress bar while the backend works */}
+          {loading && <AnalysisProgress />}
+        </div>
       </CardContent>
     </Card>
   );

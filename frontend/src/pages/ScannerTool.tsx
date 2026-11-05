@@ -24,6 +24,8 @@ export default function ScannerTool() {
   const [templateType, setTemplateType] = useState<TemplateType>("starter");
   const [theme, setTheme] = useState<ResumeTheme>(DEFAULT_RESUME_THEME);
   const [loading, setLoading] = useState(false);
+  // True for a brief moment after the backend responds so the progress bar can hit 100%
+  const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [currentScore, setCurrentScore] = useState<number>(72);
@@ -50,9 +52,11 @@ export default function ScannerTool() {
   const totalMissingSkills = resumeData?.missing_skills?.length || 0;
   const totalActionableItems = totalBulletsThatNeedEdits + totalMissingSkills;
 
+  // Math.ceil (not floor) so approving every suggestion actually reaches the top
+  // score. The handlers below cap the total at 100.
   const pointsPerEdit =
     totalActionableItems > 0
-      ? Math.max(1, Math.floor((100 - safeBaseScore) / totalActionableItems))
+      ? Math.max(1, Math.ceil((100 - safeBaseScore) / totalActionableItems))
       : 0;
 
   const pendingBulletsCount = resumeData
@@ -116,6 +120,7 @@ export default function ScannerTool() {
     }
 
     setLoading(true);
+    setFinishing(false);
     setError("");
 
     try {
@@ -165,12 +170,17 @@ export default function ScannerTool() {
         })),
       };
 
+      // Let the progress bar finish (100% + checkmark) before showing results
+      setFinishing(true);
+      await new Promise((resolve) => setTimeout(resolve, 700));
+
       setResumeData(formattedData);
       setCurrentScore(initialScore);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setFinishing(false);
     }
   };
 
@@ -283,6 +293,7 @@ export default function ScannerTool() {
           jobDescription={jobDescription}
           templateType={templateType}
           loading={loading}
+          finishing={finishing}
           error={error}
           onFileUpload={(e) =>
             e.target.files?.[0] && setFile(e.target.files[0])

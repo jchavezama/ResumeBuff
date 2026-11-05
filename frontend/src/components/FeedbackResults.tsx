@@ -54,6 +54,11 @@ export const FeedbackResults: React.FC<FeedbackResultsProps> = ({
     return "text-destructive";
   };
 
+  const missingSkills = resumeData.missing_skills ?? [];
+  const pendingSkillsCount = missingSkills.filter(
+    (ms) => ms.status === "pending"
+  ).length;
+
   return (
     <div className="xl:col-span-5 space-y-6">
       {/* ATS SCORE CARD */}
@@ -92,7 +97,7 @@ export const FeedbackResults: React.FC<FeedbackResultsProps> = ({
           <div className="text-xs leading-relaxed">
             <p className="font-bold text-emerald-900 dark:text-emerald-300">
               {totalBulletsThatNeedEdits === 0
-                ? "Man, these bullet points are already great!"
+                ? "Wow, you have a very solid start!"
                 : `${alreadyStrongBulletsCount} bullet point${
                     alreadyStrongBulletsCount > 1 ? "s were" : " was"
                   } already strong!`}
@@ -109,13 +114,13 @@ export const FeedbackResults: React.FC<FeedbackResultsProps> = ({
       )}
 
       {/* LIVE TEMPLATE SWITCHER */}
-      <div className="bg-muted/50 p-3 rounded-xl border flex items-center justify-between gap-2">
+      <div className="bg-muted/50 p-3 rounded-xl border flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-semibold text-muted-foreground pl-2">
           Active Layout:
         </span>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
-            className="h-8 text-xs"
+            className="h-8 text-xs whitespace-nowrap"
             onClick={() => onTemplateChange("starter")}
             size="sm"
             variant={templateType === "starter" ? "default" : "outline"}
@@ -123,7 +128,7 @@ export const FeedbackResults: React.FC<FeedbackResultsProps> = ({
             1-Page Starter
           </Button>
           <Button
-            className="h-8 text-xs"
+            className="h-8 text-xs whitespace-nowrap"
             onClick={() => onTemplateChange("experienced")}
             size="sm"
             variant={templateType === "experienced" ? "default" : "outline"}
@@ -133,41 +138,51 @@ export const FeedbackResults: React.FC<FeedbackResultsProps> = ({
         </div>
       </div>
 
-      {/* SCROLLABLE REVIEW LIST */}
-      <div className="space-y-8 max-h-[700px] overflow-y-auto pr-2 pb-10">
+      {/* SCROLLABLE REVIEW LIST
+          pl-1 / pt-1 give the card borders and shadows room so the scroll
+          container doesn't clip them. */}
+      <div className="space-y-8 max-h-[700px] overflow-y-auto pl-1 pr-3 pt-1 pb-10">
         {/* MISSING SKILLS CARD */}
-        {resumeData.missing_skills && resumeData.missing_skills.length > 0 && (
-          <Card className="border-amber-500/40 bg-amber-50/40 dark:bg-amber-950/20 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-bold flex items-center gap-2 text-amber-800 dark:text-amber-400">
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
-                Missing Skills & Experience Gap
-              </CardTitle>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                The job description asks for these skills, but they aren't on
-                your resume yet. Add them to your Technical Skills section to
-                boost your ATS match rate:
+        {missingSkills.length > 0 && (
+          <Card className="border-2 border-amber-500 bg-amber-50 dark:bg-amber-950/30 shadow-lg ring-4 ring-amber-500/10 overflow-hidden">
+            <CardHeader className="pb-4 bg-amber-100/80 dark:bg-amber-900/30 border-b-2 border-amber-500/30">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-sm font-bold flex items-center gap-2 text-amber-900 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  Missing Skills & Experience Gap
+                </CardTitle>
+                <span className="shrink-0 whitespace-nowrap text-[11px] font-bold bg-amber-600 text-white px-2.5 py-0.5 rounded-full">
+                  {pendingSkillsCount > 0
+                    ? `${pendingSkillsCount} to review`
+                    : "All reviewed"}
+                </span>
+              </div>
+              <p className="text-xs text-amber-900/80 dark:text-amber-200/80 leading-relaxed">
+                The job description asks for these, but they aren't on your
+                resume. Only add the ones you genuinely have experience with.
               </p>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {resumeData.missing_skills.map((ms) => (
+
+            <CardContent className="space-y-3 pt-4">
+              {missingSkills.map((ms) => (
                 <div
                   key={ms.id}
-                  className="p-3 rounded-lg bg-background border border-amber-500/20 flex flex-col gap-2 shadow-sm"
+                  className="p-3 rounded-lg bg-background border border-amber-500/40 flex flex-col gap-2 shadow-sm"
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-sm text-foreground">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="font-bold text-sm text-foreground leading-snug">
                         {ms.skill_name}
-                      </span>
-                      <span className="ml-2 text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                      </p>
+                      <span className="inline-block text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded whitespace-nowrap">
                         {ms.category}
                       </span>
                     </div>
-                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                    <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-amber-700 dark:text-amber-400">
                       +{pointsPerEdit} Pts
                     </span>
                   </div>
+
                   <p className="text-xs text-muted-foreground">{ms.reason}</p>
 
                   {ms.status === "pending" ? (
@@ -199,11 +214,12 @@ export const FeedbackResults: React.FC<FeedbackResultsProps> = ({
                       >
                         {ms.status === "added" ? (
                           <>
-                            <Check className="h-3 w-3" /> Added to {ms.category}
+                            <Check className="h-3 w-3 shrink-0" /> Added to{" "}
+                            {ms.category}
                           </>
                         ) : (
                           <>
-                            <X className="h-3 w-3" /> Skipped
+                            <X className="h-3 w-3 shrink-0" /> Skipped
                           </>
                         )}
                       </span>
@@ -238,12 +254,12 @@ export const FeedbackResults: React.FC<FeedbackResultsProps> = ({
                     >
                       <Card className="border-l-4 border-l-emerald-500 bg-emerald-50/30 dark:bg-emerald-950/10 shadow-sm">
                         <CardContent className="p-4 space-y-2">
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
                               <ShieldCheck className="h-4 w-4" /> Already Strong
                               — Left Alone
                             </span>
-                            <span className="text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded">
+                            <span className="shrink-0 whitespace-nowrap text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded">
                               Kept Original
                             </span>
                           </div>
@@ -276,11 +292,11 @@ export const FeedbackResults: React.FC<FeedbackResultsProps> = ({
                   >
                     <Card className={editCardClass}>
                       <CardHeader className="pb-3">
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-start gap-2">
                           <CardTitle className="text-xs font-bold uppercase tracking-wider text-primary">
                             Wanted → Did → Impact Rewrite
                           </CardTitle>
-                          <span className="text-xs font-semibold bg-muted px-2 py-1 rounded-md text-muted-foreground">
+                          <span className="shrink-0 whitespace-nowrap text-xs font-semibold bg-muted px-2 py-1 rounded-md text-muted-foreground">
                             +{pointsPerEdit} Pts
                           </span>
                         </div>

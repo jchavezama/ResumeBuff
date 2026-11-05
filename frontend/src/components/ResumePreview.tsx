@@ -57,7 +57,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
       {/* LIVE PERSONALIZATION TOOLBAR */}
       <ThemeCustomizer theme={theme} onChange={onThemeChange} />
 
-      <div className="w-full max-w-[850px] mb-2 flex justify-between items-center text-xs text-muted-foreground px-1">
+      <div className="w-full max-w-[850px] mb-2 flex flex-wrap justify-between items-center gap-x-4 gap-y-1 text-xs text-muted-foreground px-1">
         <span>
           Active Template:{" "}
           <strong>
@@ -149,28 +149,32 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
           <h3 className={sectionHeaderClass}>Experience & Projects</h3>
           <div className={experienceSpacing}>
             {resumeData.experience.map((exp, idx) => (
-              <div key={idx} className="break-inside-avoid">
-                <div className="flex justify-between items-baseline mb-0.5">
-                  <h4 className="font-bold text-gray-900 text-[15px]">
-                    {exp.company_name}{" "}
-                    <span className="font-normal text-gray-400 mx-1">—</span>{" "}
-                    <span className="font-semibold italic text-gray-700">
-                      {exp.job_title}
-                    </span>
-                  </h4>
-                  {exp.dates && (
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      {exp.dates}
-                    </span>
+              <div key={idx}>
+                {/* Job header stays attached to its first bullet */}
+                <div className="keep-with-next">
+                  <div className="flex justify-between items-baseline mb-0.5">
+                    <h4 className="font-bold text-gray-900 text-[15px]">
+                      {exp.company_name}{" "}
+                      <span className="font-normal text-gray-400 mx-1">—</span>{" "}
+                      <span className="font-semibold italic text-gray-700">
+                        {exp.job_title}
+                      </span>
+                    </h4>
+                    {exp.dates && (
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        {exp.dates}
+                      </span>
+                    )}
+                  </div>
+
+                  {templateType === "experienced" && exp.company_description && (
+                    <p className="text-[13px] italic text-gray-500">
+                      {exp.company_description}
+                    </p>
                   )}
                 </div>
 
-                {templateType === "experienced" && exp.company_description && (
-                  <p className="text-[13px] italic text-gray-500 mb-2">
-                    {exp.company_description}
-                  </p>
-                )}
-
+                {/* Bullets can flow across pages individually */}
                 <div className="space-y-1.5 mt-2">
                   {exp.bullets.map((b) => {
                     const highlightClass =
@@ -180,7 +184,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
                     return (
                       <div
                         key={b.id}
-                        className="flex items-start text-[13px] text-gray-800 leading-relaxed pl-1"
+                        className="break-inside-avoid flex items-start text-[13px] text-gray-800 leading-relaxed pl-1"
                       >
                         <span
                           className={`mr-2.5 ${accent.text} font-bold select-none`}

@@ -5,6 +5,7 @@ import Home from "./pages/Home";
 import ScannerTool from "./pages/ScannerTool";
 import Login from "./pages/Login";
 import Privacy from "./pages/Privacy";
+import AuthCallback from "./components/AuthCallback";
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
             <Route path="/scanner" element={<ScannerTool />} />
             <Route path="/login" element={<Login />} />
             <Route path="/privacy" element={<Privacy />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
           </Routes>
         </main>
 
